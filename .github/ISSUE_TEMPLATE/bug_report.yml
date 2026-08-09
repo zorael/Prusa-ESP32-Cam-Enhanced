@@ -1,0 +1,71 @@
+name: Bug report
+description: Something misbehaves on the device
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Scrub your logs before pasting them.** They contain your WiFi SSID, and at
+        verbose level your Prusa Connect token and PrusaLink API key.
+
+  - type: input
+    id: version
+    attributes:
+      label: Firmware version
+      description: System tab in the web UI, or the boot banner on serial.
+      placeholder: "1.0.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: board
+    attributes:
+      label: Board
+      description: Only AI Thinker is built and tested; the others are unverified.
+      options:
+        - AI Thinker ESP32-CAM
+        - Freenove ESP32-Wrover-Dev
+        - ESP32-S3-EYE 2.2
+        - Freenove ESP32-S3-Wroom
+        - Seeed XIAO ESP32-S3 Sense
+        - ESP32-S3-CAM
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: camera
+    attributes:
+      label: Camera sensor and resolution
+      placeholder: "OV3660 at 1600x1200"
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happens, and what you expected instead
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce it
+      description: Include how often — every upload, once an hour, only during a print.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Serial log around the failure
+      description: "`pio device monitor -b 115200`. A reboot's panic backtrace is the useful part."
+      render: text
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: It still happens after a reboot
+        - label: It still happens after a clean flash (`devflash.py fresh --virgin`)
+        - label: I checked this does not also happen on upstream prusa3d firmware

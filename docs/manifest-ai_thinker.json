@@ -1,0 +1,13 @@
+{
+  "name": "Prusa ESP32-Cam Enhanced (AI Thinker ESP32-CAM)",
+  "version": "__VERSION__",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32",
+      "parts": [
+        { "path": "firmware-ai_thinker.factory.bin", "offset": 0 }
+      ]
+    }
+  ]
+}

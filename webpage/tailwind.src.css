@@ -1,0 +1,122 @@
+/* Source stylesheet. Build it with:  cd webpage && npm run build
+   Output is styles.css, which is generated — do not edit that file. */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Hand-written rules Tailwind has no utility for: the custom scrollbar, the range
+   slider thumb, the toggle switch, and two keyframe animations. These used to sit
+   in an inline <style> in index.html. */
+@layer components {
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #2a2a2a;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #444;
+    border-radius: 3px;
+  }
+
+  input[type='range'] {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 4px;
+    border-radius: 2px;
+    background: #444;
+    outline: none;
+  }
+  input[type='range']::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #fa6831;
+    cursor: pointer;
+    border: 2px solid #1e1e1e;
+  }
+
+  .toggle {
+    position: relative;
+    display: inline-block;
+    width: 48px;
+    height: 26px;
+  }
+  .toggle input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+  .sl {
+    position: absolute;
+    inset: 0;
+    background: #444;
+    border-radius: 13px;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .toggle input:checked + .sl {
+    background: #fa6831;
+  }
+  .sl::before {
+    content: '';
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    left: 3px;
+    bottom: 3px;
+    background: #e0e0e0;
+    border-radius: 50%;
+    transition: transform 0.2s;
+  }
+  .toggle input:checked + .sl::before {
+    transform: translateX(22px);
+  }
+
+  @keyframes blink {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0;
+    }
+  }
+  .blink {
+    animation: blink 1s step-start infinite;
+  }
+
+  @keyframes fadein {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  .toast {
+    animation: fadein 0.25s ease;
+  }
+
+  .tab-btn.active {
+    color: #fa6831;
+    border-bottom-color: #fa6831;
+  }
+
+  #sidebar {
+    transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+}
+
+/* Tailwind's preflight resets body to margin:0 but sets no colours. */
+@layer base {
+  body {
+    background: #1e1e1e;
+    color: #e0e0e0;
+    font-family: system-ui, -apple-system, sans-serif;
+  }
+}

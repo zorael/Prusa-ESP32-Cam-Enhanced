@@ -1,0 +1,1079 @@
+<!DOCTYPE HTML>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prusa ESP32-CAM</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/styles.css">
+<!-- Critical inline CSS: the page background, so a slow stylesheet fetch never
+     flashes white. Everything else is in styles.css, built from tailwind.src.css.
+     The Tailwind CDN used to live here; it made the UI depend on internet access,
+     which the device's own setup AP does not have. -->
+<style>body{background:#1e1e1e;color:#e0e0e0}</style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+<!-- OVERLAY (mobile drawer backdrop) -->
+<div id="sidebar-overlay" onclick="closeSidebar()" class="fixed inset-0 bg-black/60 z-30 hidden lg:hidden"></div>
+
+<!-- TOP NAV -->
+<header class="bg-surface border-b border-border px-3 py-2 flex items-center gap-2 shrink-0 z-20 relative">
+  <button onclick="toggleSidebar()" class="lg:hidden p-2 -ml-1 rounded text-sub hover:text-text active:bg-panel" aria-label="Open controls">
+    <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
+  <img src="/favicon.svg" class="w-6 h-6 shrink-0" alt="">
+  <span class="font-bold text-orange tracking-wide text-sm uppercase">Prusa ESP32-CAM</span>
+  <span id="nav-hostname" class="text-muted text-xs hidden sm:inline truncate"></span>
+  <div class="ml-auto flex items-center gap-3 text-xs">
+    <div class="flex items-center gap-1" title="WiFi signal">
+      <svg id="rssi-icon" class="w-4 h-4 text-sub" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><circle cx="12" cy="20" r="1" fill="currentColor"/></svg>
+      <span id="rssi-val" class="text-sub hidden sm:inline">--</span>
+    </div>
+    <div class="flex items-center gap-1" title="SD card">
+      <svg class="w-4 h-4 text-sub" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 5v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5l3-3h9l2 2z"/><polyline points="14 3 14 8 19 8"/></svg>
+      <span id="sd-val" class="text-sub">--</span>
+    </div>
+    <div class="hidden md:flex items-center gap-1" title="Uptime">
+      <svg class="w-4 h-4 text-sub" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      <span id="uptime-val" class="text-sub">--</span>
+    </div>
+    <span id="mode-badge" class="px-2 py-0.5 rounded text-xs font-semibold bg-panel text-sub border border-border">SNAP</span>
+  </div>
+</header>
+
+<!-- MAIN LAYOUT -->
+<div class="flex flex-1 overflow-hidden">
+
+  <!-- SIDEBAR -->
+  <aside id="sidebar" class="fixed lg:relative inset-y-0 left-0 z-40 w-72 lg:w-64 bg-surface border-r border-border flex flex-col shrink-0 overflow-y-auto -translate-x-full lg:translate-x-0">
+
+    <!-- Mobile drawer header -->
+    <div class="lg:hidden flex items-center justify-between px-4 py-3 border-b border-border bg-panel">
+      <span class="text-xs font-bold text-orange uppercase tracking-widest">Controls</span>
+      <button onclick="closeSidebar()" class="p-1.5 rounded text-sub hover:text-text active:bg-surface" aria-label="Close controls">
+        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+
+    <!-- Actions -->
+    <div class="p-4 space-y-2 border-b border-border">
+      <p class="text-xs text-muted uppercase tracking-widest mb-3">Actions</p>
+      <button id="btn-capture" onclick="doCapture();closeSidebar()" class="w-full flex items-center justify-center gap-2 py-3 rounded bg-orange hover:bg-orange-dim active:bg-orange-dim text-white text-sm font-semibold transition-colors">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        Capture &amp; Upload
+      </button>
+      <button id="btn-snap" onclick="doSnap();closeSidebar()" class="w-full flex items-center justify-center gap-2 py-3 rounded bg-panel border border-border hover:border-orange active:border-orange text-sub hover:text-orange text-sm font-semibold transition-colors">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        Refresh Snapshot
+      </button>
+      <button onclick="confirmReboot()" class="w-full flex items-center justify-center gap-2 py-3 rounded bg-panel border border-border hover:border-danger active:border-danger text-sub hover:text-danger text-sm font-semibold transition-colors">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        Reboot
+      </button>
+    </div>
+
+    <!-- Feed Controls -->
+    <div class="p-4 border-b border-border">
+      <p class="text-xs text-muted uppercase tracking-widest mb-3">Feed Controls</p>
+      <div class="mb-4">
+        <div class="flex justify-between text-xs mb-2">
+          <label for="snap-interval" class="text-sub">Snapshot Interval</label>
+          <span id="snap-interval-val" class="text-orange font-mono">10s</span>
+        </div>
+        <input type="range" id="snap-interval" min="10" max="240" value="10" class="w-full" aria-label="Snapshot interval in seconds">
+      </div>
+      <div class="flex items-center justify-between py-2 mb-1">
+        <div><p class="text-sm text-text">Live Stream</p><p class="text-xs text-muted">MJPEG — pauses sync</p></div>
+        <label class="toggle">
+          <input type="checkbox" id="stream-toggle" aria-label="Live Stream" onchange="syncStream(this.checked)">
+          <span class="sl"></span>
+        </label>
+      </div>
+      <div class="flex items-center justify-between py-2">
+        <div class="flex items-center gap-2">
+          <svg class="w-4 h-4 text-sub shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+          <div><p class="text-sm text-text">LED Light</p><p class="text-xs text-muted">Constant on/off</p></div>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="led-toggle" aria-label="LED Light" onchange="toggleLed()">
+          <span class="sl"></span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Timelapse -->
+    <div class="p-4 border-b border-border">
+      <p class="text-xs text-muted uppercase tracking-widest mb-3">Timelapse</p>
+      <div class="flex items-center justify-between mb-3">
+        <div><p class="text-sm text-text">Record</p><p id="tl-status-text" class="text-xs text-muted">Idle</p></div>
+        <button id="tl-btn" onclick="toggleTimelapse()" class="min-w-16 px-3 py-2 rounded text-xs font-semibold bg-panel border border-border text-sub hover:border-orange hover:text-orange transition-colors">START</button>
+      </div>
+      <div id="tl-stats" class="hidden space-y-1 text-xs text-sub mb-3">
+        <div class="flex justify-between"><span>Frames</span><span id="tl-frames" class="font-mono text-text">0</span></div>
+        <div class="flex justify-between"><span>File size</span><span id="tl-size" class="font-mono text-text">0 KB</span></div>
+        <div class="space-y-0.5"><span>File</span><div id="tl-file" class="font-mono text-text break-all">—</div></div>
+      </div>
+      <div>
+        <label for="tl-trigger" class="text-xs text-muted block mb-1">Trigger Mode</label>
+        <select id="tl-trigger" onchange="setTlTrigger(this.value)" class="w-full bg-panel border border-border rounded text-sm text-text px-2 py-2 focus:outline-none focus:border-orange">
+          <option value="manual">Manual</option>
+          <option value="printer">PrusaLink</option>
+        </select>
+        <div class="mt-3">
+          <label for="tl-max-frames" class="text-xs text-muted block mb-1">Max frames/file <span class="text-sub">(0 = unlimited)</span></label>
+          <div class="flex gap-2">
+            <input type="number" id="tl-max-frames" min="0" max="65534" step="1" placeholder="100" class="flex-1 bg-base border border-border rounded text-xs text-text px-2 py-1.5 focus:outline-none focus:border-orange">
+            <button onclick="setTlMaxFrames()" class="px-2 py-1 bg-panel border border-border hover:border-orange text-sub hover:text-orange rounded text-xs font-semibold transition-colors">Save</button>
+          </div>
+        </div>
+        <div id="pl-cfg" class="hidden mt-3 space-y-3 pt-3 border-t border-border">
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-sub">Enable polling</span>
+            <label class="toggle">
+              <input type="checkbox" id="pl-enable" aria-label="PrusaLink Enable" onchange="savePlEnable(this.checked)">
+              <span class="sl"></span>
+            </label>
+          </div>
+          <div>
+            <label class="text-xs text-muted block mb-1">Printer IP</label>
+            <div class="flex gap-2">
+              <input type="text" id="pl-ip" placeholder="192.168.1.50" class="flex-1 bg-base border border-border rounded text-xs text-text px-2 py-1.5 focus:outline-none focus:border-orange">
+              <button onclick="savePlIp()" class="px-2 py-1 bg-panel border border-border hover:border-orange text-sub hover:text-orange rounded text-xs font-semibold transition-colors">Save</button>
+            </div>
+          </div>
+          <div>
+            <label class="text-xs text-muted block mb-1">API Key</label>
+            <div class="flex gap-2">
+              <input type="password" id="pl-key" placeholder="Enter to update" class="flex-1 bg-base border border-border rounded text-xs text-text px-2 py-1.5 focus:outline-none focus:border-orange">
+              <button onclick="savePlKey()" class="px-2 py-1 bg-panel border border-border hover:border-orange text-sub hover:text-orange rounded text-xs font-semibold transition-colors">Save</button>
+            </div>
+          </div>
+          <div id="pl-stop-upload-row" class="flex items-center justify-between py-1">
+            <div>
+              <p class="text-xs text-sub">Disable upload when print ends</p>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="pl-stop-upload" aria-label="Stop Upload On Done" onchange="setPlStopUploadOnDone(this.checked)">
+              <span class="sl"></span>
+            </label>
+          </div>
+          <div class="rounded bg-base border border-border p-2.5 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-xs text-muted">Printer</span>
+              <span id="pl-state-badge" class="px-1.5 py-0.5 rounded text-xs font-mono font-semibold bg-panel text-muted">—</span>
+            </div>
+            <div id="pl-progress-row" class="hidden space-y-1">
+              <div class="flex justify-between text-xs text-sub">
+                <span>Progress</span><span id="pl-progress-val" class="font-mono text-text">0%</span>
+              </div>
+              <div class="w-full bg-panel rounded-full h-1.5">
+                <div id="pl-progress-bar" class="bg-orange h-1.5 rounded-full transition-all" style="width:0%"></div>
+              </div>
+            </div>
+            <div id="pl-temps-row" class="hidden flex gap-4 text-xs text-sub">
+              <span>Nozzle <span id="pl-nozzle" class="font-mono text-text">—</span>°C</span>
+              <span>Bed <span id="pl-bed" class="font-mono text-text">—</span>°C</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Camera Settings -->
+    <div class="p-4 border-b border-border">
+      <p class="text-xs text-muted uppercase tracking-widest mb-3">Camera</p>
+      <div class="space-y-4">
+        <div>
+          <div class="flex justify-between text-xs mb-2">
+            <label for="brightness" class="text-sub">Brightness</label>
+            <span id="brightness-val" class="text-orange font-mono">0</span>
+          </div>
+          <input type="range" id="brightness" min="-2" max="2" value="0" step="1" class="w-full" onchange="setCamInt('brightness',this.value)" oninput="setText('brightness-val',this.value)">
+        </div>
+        <div>
+          <div class="flex justify-between text-xs mb-2">
+            <label for="contrast" class="text-sub">Contrast</label>
+            <span id="contrast-val" class="text-orange font-mono">0</span>
+          </div>
+          <input type="range" id="contrast" min="-2" max="2" value="0" step="1" class="w-full" onchange="setCamInt('contrast',this.value)" oninput="setText('contrast-val',this.value)">
+        </div>
+        <div>
+          <div class="flex justify-between text-xs mb-2">
+            <label for="saturation" class="text-sub">Saturation</label>
+            <span id="saturation-val" class="text-orange font-mono">0</span>
+          </div>
+          <input type="range" id="saturation" min="-2" max="2" value="0" step="1" class="w-full" onchange="setCamInt('saturation',this.value)" oninput="setText('saturation-val',this.value)">
+        </div>
+        <div class="flex items-center justify-between py-1">
+          <div>
+            <label for="hmirror" class="text-sm text-sub">Mirror Horizontal</label>
+            <div class="text-xs text-muted">flip image left/right</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="hmirror" aria-label="Mirror Horizontal" onchange="setCamBool('hmirror',this.checked)">
+            <span class="sl"></span>
+          </label>
+        </div>
+        <div class="flex items-center justify-between py-1">
+          <div>
+            <label for="vflip" class="text-sm text-sub">Flip Vertical</label>
+            <div class="text-xs text-muted">flip image up/down</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="vflip" aria-label="Flip Vertical" onchange="setCamBool('vflip',this.checked)">
+            <span class="sl"></span>
+          </label>
+        </div>
+        <div class="text-xs text-muted pt-1 pb-2">Mirror/flip corrects raw sensor pixels (affects stream, snapshots, and timelapse). Set JPEG Rotation to 0° when using sensor-level correction.</div>
+        <div class="flex items-center justify-between py-1">
+          <div>
+            <label for="image_rotation" class="text-sm text-sub">JPEG Rotation</label>
+            <div class="text-xs text-muted">EXIF tag in saved photos only</div>
+          </div>
+          <select id="image_rotation" onchange="setCamInt('image_rotation',this.value)" class="bg-panel border border-border rounded text-sm text-text px-2 py-1 focus:outline-none focus:border-orange">
+            <option value="1">0°</option>
+            <option value="6">90° CW</option>
+            <option value="3">180°</option>
+            <option value="8">270° CW</option>
+          </select>
+        </div>
+        <div>
+          <label for="framesize" class="text-xs text-sub block mb-2">Resolution</label>
+          <select id="framesize" onchange="setCamInt('framesize',this.value)" class="w-full bg-panel border border-border rounded text-sm text-text px-2 py-2 focus:outline-none focus:border-orange">
+            <option value="0">320×240 QVGA</option>
+            <option value="1">400×296 CIF</option>
+            <option value="2">640×480 VGA</option>
+            <option value="3">800×600 SVGA</option>
+            <option value="4">1024×768 XGA</option>
+            <option value="5">1280×1024 SXGA</option>
+            <option value="6">1600×1200 UXGA</option>
+          </select>
+        </div>
+        <div>
+          <div class="flex justify-between text-xs mb-2">
+            <label for="photo_quality" class="text-sub">JPEG Quality</label>
+            <span id="photo_quality-val" class="text-orange font-mono">10</span>
+          </div>
+          <input type="range" id="photo_quality" min="10" max="63" value="10" class="w-full" onchange="setCamInt('photo_quality',this.value)" oninput="setText('photo_quality-val',this.value)">
+        </div>
+      </div>
+    </div>
+
+    <!-- Flash -->
+    <div class="p-4 border-b border-border">
+      <p class="text-xs text-muted uppercase tracking-widest mb-3">Flash</p>
+      <div class="space-y-4">
+        <div class="flex items-center justify-between py-1">
+          <div class="flex items-center gap-2">
+            <svg class="w-4 h-4 text-sub shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            <div><p class="text-sm text-text">Flash on Snapshot</p><p class="text-xs text-muted">Fires during capture</p></div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="flash-toggle" aria-label="Flash on Snapshot" onchange="toggleFlash()">
+            <span class="sl"></span>
+          </label>
+        </div>
+        <div>
+          <div class="flex justify-between text-xs mb-2">
+            <label for="flash_time" class="text-sub">Duration</label>
+            <span id="flash_time-val" class="text-orange font-mono">200 ms</span>
+          </div>
+          <input type="range" id="flash_time" min="50" max="1500" value="200" step="50" class="w-full" onchange="setCamInt('flash_time',this.value)" oninput="setText('flash_time-val',this.value+' ms')">
+        </div>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- MAIN CONTENT -->
+  <main class="flex-1 flex flex-col overflow-hidden min-w-0">
+
+    <!-- Observation Deck -->
+    <div class="relative bg-black flex items-center justify-center overflow-hidden shrink-0" style="height:clamp(200px,40vw,58vh)">
+      <img id="cam-img" src="/saved-photo.jpg" class="max-w-full max-h-full object-contain" alt="Camera feed">
+
+      <!-- REC badge -->
+      <div id="rec-badge" class="hidden absolute top-2 left-2 flex items-center gap-1.5 bg-black/70 rounded px-2 py-1" role="status" aria-live="polite">
+        <span class="blink w-2 h-2 rounded-full bg-danger inline-block" aria-hidden="true"></span>
+        <span class="text-danger text-xs font-bold tracking-widest">REC</span>
+        <span id="rec-frames" class="text-sub text-xs font-mono ml-1">0 fr</span>
+      </div>
+
+      <!-- Stream warning -->
+      <div id="stream-warn" class="hidden absolute bottom-2 left-0 right-0 mx-3 bg-warn/20 border border-warn/50 rounded px-3 py-1.5 text-xs text-warn text-center">
+        Prusa Connect Sync paused during Live Stream
+      </div>
+
+      <!-- TL + Stream conflict -->
+      <div id="tl-stream-warn" class="hidden absolute top-2 right-2 bg-warn/20 border border-warn/50 rounded px-2 py-1 text-xs text-warn">
+        Stream may affect TL
+      </div>
+
+      <!-- Upload overlay -->
+      <div id="upload-overlay" class="hidden absolute inset-0 bg-black/65 flex items-center justify-center">
+        <div class="flex flex-col items-center gap-2">
+          <svg class="w-8 h-8 text-orange animate-spin" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" stroke-opacity="0.25"/>
+            <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          <span class="text-white text-xs font-semibold tracking-wide">Uploading to Prusa Connect…</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mobile action bar (inline, below preview) -->
+    <div class="lg:hidden bg-surface border-b border-border px-3 py-2 flex items-center gap-2 shrink-0">
+      <div class="flex items-center gap-2 shrink-0">
+        <span class="text-xs text-sub">Stream</span>
+        <label class="toggle">
+          <input type="checkbox" id="stream-toggle-mob" aria-label="Live Stream" onchange="syncStream(this.checked)">
+          <span class="sl"></span>
+        </label>
+      </div>
+      <button id="btn-snap-mob" onclick="doSnap()" class="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded bg-panel border border-border text-sub text-xs font-semibold active:border-orange transition-colors">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        Refresh
+      </button>
+      <button id="btn-capture-mob" onclick="doCapture()" class="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded bg-orange text-white text-xs font-semibold active:bg-orange-dim transition-colors">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        Upload
+      </button>
+    </div>
+
+    <!-- SD bar -->
+    <div class="bg-panel border-b border-border px-3 py-1.5 flex items-center gap-2 text-xs shrink-0">
+      <svg class="w-3.5 h-3.5 text-muted shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 5v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5l3-3h9l2 2z"/><polyline points="14 3 14 8 19 8"/></svg>
+      <div class="flex-1 bg-surface rounded-full h-1.5 overflow-hidden"><div id="sd-bar" class="h-full bg-orange rounded-full transition-all" style="width:0%"></div></div>
+      <span id="sd-detail" class="text-sub shrink-0 truncate max-w-40">SD: --</span>
+    </div>
+
+    <!-- Tabs -->
+    <div class="bg-surface border-b border-border flex text-xs font-medium overflow-x-auto shrink-0" role="tablist" aria-label="Configuration sections">
+      <button role="tab" aria-selected="true" aria-controls="tab-system" class="tab-btn active px-4 py-3 border-b-2 border-transparent text-sub hover:text-text shrink-0 transition-colors" data-tab="system" onclick="switchTab(this)">System</button>
+      <button role="tab" aria-selected="false" aria-controls="tab-connect" class="tab-btn px-4 py-3 border-b-2 border-transparent text-sub hover:text-text shrink-0 transition-colors" data-tab="connect" onclick="switchTab(this)">Connect</button>
+      <button role="tab" aria-selected="false" aria-controls="tab-wifi" class="tab-btn px-4 py-3 border-b-2 border-transparent text-sub hover:text-text shrink-0 transition-colors" data-tab="wifi" onclick="switchTab(this)">WiFi</button>
+      <button role="tab" aria-selected="false" aria-controls="tab-tl-files" class="tab-btn px-4 py-3 border-b-2 border-transparent text-sub hover:text-text shrink-0 transition-colors" data-tab="tl-files" onclick="switchTab(this)">TL Files</button>
+      <button role="tab" aria-selected="false" aria-controls="tab-logs" class="tab-btn px-4 py-3 border-b-2 border-transparent text-sub hover:text-text shrink-0 transition-colors" data-tab="logs" onclick="switchTab(this)">Logs</button>
+    </div>
+
+    <!-- Tab panes -->
+    <div class="flex-1 overflow-y-auto p-3 text-xs">
+
+      <!-- System -->
+      <div role="tabpanel" id="tab-system" class="tab-pane grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div class="bg-panel rounded-lg p-3 border border-border"><p class="text-muted mb-1">Firmware</p><p id="sys-ver" class="text-text font-mono break-all">--</p></div>
+        <div class="bg-panel rounded-lg p-3 border border-border"><p class="text-muted mb-1">Uptime</p><p id="sys-uptime" class="text-text font-mono">--</p></div>
+        <div class="bg-panel rounded-lg p-3 border border-border"><p class="text-muted mb-1">MCU Temp</p><p id="sys-mcu-temp" class="text-text font-mono">--</p></div>
+        <div class="bg-panel rounded-lg p-3 border border-border"><p class="text-muted mb-1">IP Address</p><p id="sys-ip" class="text-text font-mono break-all">--</p></div>
+        <div class="bg-panel rounded-lg p-3 border border-border"><p class="text-muted mb-1">mDNS</p><p id="sys-mdns" class="text-text font-mono break-all">--</p></div>
+        <div class="bg-panel rounded-lg p-3 border border-border"><p class="text-muted mb-1">WiFi SSID</p><p id="sys-ssid" class="text-text font-mono truncate">--</p></div>
+        <div class="bg-panel rounded-lg p-3 border border-border"><p class="text-muted mb-1">RSSI</p><p id="sys-rssi" class="text-text font-mono">--</p></div>
+        <div class="bg-panel rounded-lg p-3 border border-border"><p class="text-muted mb-1">Last Upload</p><p id="sys-upload" class="text-text font-mono truncate">--</p></div>
+        <div class="bg-panel rounded-lg p-3 border border-border col-span-2 sm:col-span-4">
+          <p class="text-muted mb-2">Firmware update</p>
+          <div class="flex flex-wrap items-center gap-2">
+            <button id="ota-check" onclick="otaCheck()" class="bg-surface hover:bg-border text-text rounded-lg px-3 py-2 border border-border transition-colors">Check for update</button>
+            <button id="ota-install" onclick="otaInstall()" class="hidden bg-orange hover:opacity-90 text-white rounded-lg px-3 py-2 transition-opacity">Install</button>
+            <button id="ota-reboot" onclick="otaReboot()" class="hidden bg-surface hover:bg-border text-text rounded-lg px-3 py-2 border border-border transition-colors">Reboot now</button>
+            <span id="ota-msg" class="text-muted"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Prusa Connect -->
+      <div role="tabpanel" id="tab-connect" class="tab-pane hidden space-y-3">
+        <div class="bg-panel rounded-lg p-4 border border-border space-y-4">
+          <div class="flex items-center justify-between py-1">
+            <div>
+              <p class="text-sm text-text">Upload to Prusa Connect</p>
+              <p class="text-xs text-muted">Pause or resume sending images</p>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="upload-enable" aria-label="Upload Enable" onchange="setUploadEnable(this.checked)">
+              <span class="sl"></span>
+            </label>
+          </div>
+          <div>
+            <label for="cfg-token" class="text-muted block mb-1.5">Token</label>
+            <div class="flex gap-2">
+              <input id="cfg-token" type="password" class="flex-1 bg-base border border-border rounded px-3 py-2 text-text focus:outline-none focus:border-orange font-mono text-xs min-w-0" placeholder="Prusa Connect token">
+              <button onclick="saveToken()" class="px-3 py-2 bg-orange hover:bg-orange-dim text-white rounded text-xs font-semibold transition-colors shrink-0">Save</button>
+            </div>
+          </div>
+          <div>
+            <label for="cfg-refresh" class="text-muted block mb-1.5">Upload Interval (s)</label>
+            <div class="flex gap-2">
+              <input id="cfg-refresh" type="number" min="10" max="240" class="w-24 bg-base border border-border rounded px-3 py-2 text-text focus:outline-none focus:border-orange font-mono text-xs" placeholder="30">
+              <button onclick="saveRefresh()" class="px-3 py-2 bg-panel border border-border hover:border-orange text-sub hover:text-orange rounded text-xs font-semibold transition-colors">Save</button>
+            </div>
+          </div>
+          <div>
+            <label for="cfg-hostname" class="text-muted block mb-1.5">Hostname</label>
+            <div class="flex gap-2">
+              <input id="cfg-hostname" type="text" class="flex-1 bg-base border border-border rounded px-3 py-2 text-text focus:outline-none focus:border-orange font-mono text-xs min-w-0" placeholder="connect.prusa3d.com">
+              <button onclick="saveHostname()" class="px-3 py-2 bg-panel border border-border hover:border-orange text-sub hover:text-orange rounded text-xs font-semibold transition-colors shrink-0">Save</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- WiFi -->
+      <div role="tabpanel" id="tab-wifi" class="tab-pane hidden space-y-3">
+        <div class="bg-panel rounded-lg p-4 border border-border space-y-4">
+          <div>
+            <label for="cfg-ssid" class="text-muted block mb-1.5">SSID</label>
+            <input id="cfg-ssid" type="text" class="w-full bg-base border border-border rounded px-3 py-2 text-text focus:outline-none focus:border-orange text-sm" placeholder="Network name">
+          </div>
+          <div>
+            <label for="cfg-pass" class="text-muted block mb-1.5">Password</label>
+            <input id="cfg-pass" type="password" class="w-full bg-base border border-border rounded px-3 py-2 text-text focus:outline-none focus:border-orange text-sm">
+          </div>
+          <button onclick="saveWifi()" class="w-full py-2.5 bg-orange hover:bg-orange-dim text-white rounded text-sm font-semibold transition-colors">Save &amp; Reconnect</button>
+        </div>
+        <div class="bg-panel rounded-lg p-4 border border-border">
+          <div class="flex justify-between items-center mb-3">
+            <span class="text-muted">Nearby Networks</span>
+            <button onclick="scanWifi()" class="px-3 py-1.5 bg-panel border border-border hover:border-orange text-sub hover:text-orange rounded text-xs font-semibold transition-colors">Scan</button>
+          </div>
+          <div id="wifi-networks" class="space-y-1 text-sub">Press Scan to search.</div>
+        </div>
+      </div>
+
+      <!-- TL Files -->
+      <div role="tabpanel" id="tab-tl-files" class="tab-pane hidden">
+        <div class="bg-panel rounded-lg border border-border overflow-hidden">
+          <div class="flex justify-between items-center p-3 border-b border-border">
+            <span class="text-muted">Timelapse Files</span>
+            <div class="flex gap-2">
+              <button onclick="loadTlFiles()" class="px-3 py-1.5 bg-panel border border-border hover:border-orange text-sub hover:text-orange rounded text-xs font-semibold transition-colors">Refresh</button>
+              <button onclick="deleteAllTlFiles()" class="px-3 py-1.5 bg-panel border border-border hover:border-danger text-sub hover:text-danger rounded text-xs font-semibold transition-colors">Delete All</button>
+            </div>
+          </div>
+          <div id="tl-file-list" class="divide-y divide-border text-sub">Loading…</div>
+        </div>
+      </div>
+
+      <!-- Logs -->
+      <div role="tabpanel" id="tab-logs" class="tab-pane hidden">
+        <div class="bg-base rounded-lg p-3 border border-border font-mono text-xs text-sub h-48 overflow-y-auto" id="log-panel">Loading…</div>
+        <button onclick="loadLogs()" class="mt-2 px-3 py-1.5 bg-panel border border-border hover:border-orange text-sub hover:text-orange rounded text-xs font-semibold transition-colors">Refresh</button>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<!-- TOAST CONTAINER -->
+<div id="toasts" class="fixed bottom-4 right-3 flex flex-col gap-2 z-50 pointer-events-none" style="max-width:min(320px,calc(100vw - 1.5rem))"></div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────
+const S = {
+  streaming: false,
+  tlRunning: false,
+  uploading: false,
+  busy: false,
+  snapInterval: 10,
+  snapTimer: null,
+  statusController: null,
+  statusTimer: null,
+  _loaded: false,
+};
+
+// ── Boot ───────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  const si = document.getElementById('snap-interval');
+  si.addEventListener('input', () => {
+    S.snapInterval = +si.value;
+    setText('snap-interval-val', si.value + 's');
+  });
+  si.addEventListener('change', () => {
+    restartSnapTimer();
+    const v = +si.value;
+    document.getElementById('cfg-refresh').value = v;
+    fetch('set_int?refresh=' + v)
+      .then(() => toast('Interval saved', 'ok'))
+      .catch(() => toast('Save failed', 'err'));
+  });
+
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSidebar(); });
+
+  fetchStatus();
+  restartSnapTimer();
+  S.statusTimer = setInterval(fetchStatus, 5000);
+});
+
+// ── Action button state ────────────────────────────────────────────────
+function updateActionButtons() {
+  const dis = S.busy || S.uploading;
+  ['btn-capture', 'btn-snap', 'btn-snap-mob', 'btn-capture-mob'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.disabled = dis;
+    el.classList.toggle('opacity-50', dis);
+    el.classList.toggle('pointer-events-none', dis);
+  });
+}
+
+// ── Security helpers ───────────────────────────────────────────────────
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// ── Sidebar drawer ─────────────────────────────────────────────────────
+function toggleSidebar() {
+  const s = document.getElementById('sidebar');
+  const o = document.getElementById('sidebar-overlay');
+  const isClosed = s.classList.contains('-translate-x-full');
+  s.classList.toggle('-translate-x-full', !isClosed);
+  o.classList.toggle('hidden', !isClosed);
+  s.toggleAttribute('inert', !isClosed);
+  document.body.style.overflow = isClosed ? 'hidden' : '';
+}
+function closeSidebar() {
+  if (window.innerWidth >= 1024) return; // desktop: sidebar is always visible, never close
+  const s = document.getElementById('sidebar');
+  s.classList.add('-translate-x-full');
+  document.getElementById('sidebar-overlay').classList.add('hidden');
+  s.setAttribute('inert', '');
+  document.body.style.overflow = '';
+}
+
+// ── Status polling (with abort to prevent race) ────────────────────────
+function fetchStatus() {
+  if (S.statusController) S.statusController.abort();
+  S.statusController = new AbortController();
+  const sig = S.statusController.signal;
+  fetch('json_input', { signal: sig })
+    .then(r => r.json()).then(applyStatus).catch(() => {});
+  fetch('/timelapse/status', { signal: sig })
+    .then(r => r.json()).then(applyTlStatus).catch(() => {});
+}
+
+function applyStatus(d) {
+  setText('nav-hostname', d.mdns ? d.mdns + '.local' : '');
+  setText('rssi-val', d.rssi ? d.rssi + ' dBm' : '--');
+  setText('uptime-val', d.uptime || '--');
+  setText('sys-ver', d.sw_ver || '--');
+  setText('sys-uptime', d.uptime || '--');
+  setText('sys-mcu-temp', d.mcu_temp ? d.mcu_temp + ' °C' : '--');
+  setText('sys-ip', d.ip || '--');
+  setText('sys-mdns', d.mdns || '--');
+  setText('sys-ssid', d.ssid || '--');
+  setText('sys-rssi', d.rssi ? d.rssi + ' dBm (' + (d.rssi_percentage || '?') + '%)' : '--');
+  setText('sys-upload', d.last_upload_status || '--');
+
+  const used = parseFloat(d.sd_used_p) || 0;
+  const bar = document.getElementById('sd-bar');
+  bar.style.width = used + '%';
+  const barClass = 'h-full rounded-full transition-all ' + (used > 85 ? 'bg-danger' : used > 65 ? 'bg-warn' : 'bg-orange');
+  if (bar.className !== barClass) bar.className = barClass;
+  setText('sd-val', d.sd_status === 'Card detected' ? 'SD ' + used.toFixed(0) + '%' : 'No SD');
+  setText('sd-detail', d.sd_status === 'Card detected'
+    ? Math.round(+d.sd_total * (1 - used / 100)) + ' MB free / ' + d.sd_total + ' MB'
+    : 'No SD Card');
+
+  const rssi = +(d.rssi || '-100');
+  const rssiClass = 'w-4 h-4 ' + (rssi > -60 ? 'text-success' : rssi > -75 ? 'text-warn' : 'text-danger');
+  const rssiEl = document.getElementById('rssi-icon');
+  if (rssiEl.className !== rssiClass) rssiEl.className = rssiClass;
+
+  const wasUploading = S.uploading;
+  S.uploading = d.uploading === 'true';
+  document.getElementById('upload-overlay').classList.toggle('hidden', !S.uploading);
+  if (wasUploading !== S.uploading) updateActionButtons();
+
+  if (!S._loaded) {
+    S._loaded = true;
+    setSlider('brightness', d.brightness);
+    setSlider('contrast', d.contrast);
+    setSlider('saturation', d.saturation);
+    setSlider('photo_quality', d.photoquality);
+    const iv = +(d.refreshInterval || 10);
+    S.snapInterval = iv;
+    setSlider('snap-interval', iv);
+    setText('snap-interval-val', iv + 's');
+    document.getElementById('framesize').value = d.framesize || 0;
+    document.getElementById('hmirror').checked = d.hmirror === 'true';
+    document.getElementById('vflip').checked = d.vflip === 'true';
+    document.getElementById('image_rotation').value = d.image_rotation || 1;
+    document.getElementById('led-toggle').checked = d.led === 'true';
+    document.getElementById('flash-toggle').checked = d.flash === 'true';
+    if (d.flash_time) {
+      setSlider('flash_time', d.flash_time);
+      setText('flash_time-val', d.flash_time + ' ms');
+    }
+    document.getElementById('upload-enable').checked = d.upload_enable === 'true';
+    document.getElementById('pl-stop-upload').checked = d.pl_stop_upload_on_done === 'true';
+    syncUploadDependents(d.upload_enable === 'true');
+    document.getElementById('cfg-token').value = d.token || '';
+    document.getElementById('cfg-refresh').value = d.refreshInterval || 30;
+    document.getElementById('cfg-hostname').value = d.hostname || '';
+    document.getElementById('cfg-ssid').value = d.ssid || '';
+    document.getElementById('tl-trigger').value = d.tl_trigger == 1 ? 'printer' : 'manual';
+    if (d.tl_max_frames !== undefined) document.getElementById('tl-max-frames').value = d.tl_max_frames;
+    document.getElementById('pl-enable').checked = d.pl_enable === 'true';
+    document.getElementById('pl-ip').value = d.pl_ip || '';
+  }
+  document.getElementById('pl-cfg').classList.toggle('hidden', d.tl_trigger != 1);
+  applyPlStatus(d);
+}
+
+function applyTlStatus(d) {
+  const running = d.recording === 'true' || d.recording === true;
+  S.tlRunning = running;
+  document.getElementById('rec-badge').classList.toggle('hidden', !running);
+  document.getElementById('tl-stats').classList.toggle('hidden', !running);
+  const btn = document.getElementById('tl-btn');
+  if (running) {
+    btn.textContent = 'STOP';
+    btn.classList.add('border-danger', 'text-danger');
+    btn.classList.remove('text-sub', 'hover:text-orange');
+    setText('tl-status-text', 'Recording');
+    setText('tl-frames', d.frameCount ?? '--');
+    setText('tl-size', d.fileSizeMB ? (d.fileSizeMB * 1024).toFixed(0) + ' KB' : '--');
+    setText('tl-file', d.fileName || '--');
+    setText('rec-frames', (d.frameCount ?? '0') + ' fr');
+    document.getElementById('tl-stream-warn').classList.toggle('hidden', !S.streaming);
+  } else {
+    btn.textContent = 'START';
+    btn.classList.remove('border-danger', 'text-danger');
+    btn.classList.add('text-sub', 'hover:text-orange');
+    setText('tl-status-text', 'Idle');
+    document.getElementById('tl-stream-warn').classList.add('hidden');
+  }
+  updateModeBadge();
+}
+
+function updateModeBadge() {
+  const el = document.getElementById('mode-badge');
+  if (S.streaming) {
+    el.textContent = 'STREAM';
+    el.className = 'px-2 py-0.5 rounded text-xs font-semibold bg-orange/20 text-orange border border-orange/50';
+  } else if (S.tlRunning) {
+    el.textContent = 'REC';
+    el.className = 'px-2 py-0.5 rounded text-xs font-semibold bg-danger/20 text-danger border border-danger/50';
+  } else {
+    el.textContent = 'SNAP';
+    el.className = 'px-2 py-0.5 rounded text-xs font-semibold bg-panel text-sub border border-border';
+  }
+}
+
+// ── Snapshot timer ─────────────────────────────────────────────────────
+function restartSnapTimer() {
+  clearInterval(S.snapTimer);
+  if (!S.streaming) {
+    refreshSnap();
+    S.snapTimer = setInterval(refreshSnap, S.snapInterval * 1000);
+  }
+}
+function refreshSnap() {
+  document.getElementById('cam-img').src = '/saved-photo.jpg?' + Date.now();
+}
+
+// ── Stream ─────────────────────────────────────────────────────────────
+function syncStream(on) {
+  document.getElementById('stream-toggle').checked = on;
+  document.getElementById('stream-toggle-mob').checked = on;
+  on ? startStream() : stopStream();
+}
+function startStream() {
+  S.streaming = true;
+  clearInterval(S.snapTimer);
+  document.getElementById('cam-img').src = '/stream.mjpg';
+  document.getElementById('stream-warn').classList.remove('hidden');
+  if (S.tlRunning) document.getElementById('tl-stream-warn').classList.remove('hidden');
+  updateModeBadge();
+  toast('Live stream started — sync paused', 'warn');
+}
+function stopStream() {
+  S.streaming = false;
+  document.getElementById('stream-warn').classList.add('hidden');
+  document.getElementById('tl-stream-warn').classList.add('hidden');
+  updateModeBadge();
+  toast('Snapshot mode resumed', 'ok');
+  restartSnapTimer();
+}
+
+// ── Timelapse ──────────────────────────────────────────────────────────
+function toggleTimelapse() {
+  if (S.tlRunning) {
+    fetch('/timelapse/stop')
+      .then(() => { toast('Timelapse stopped — AVI saved', 'ok'); fetchStatus(); })
+      .catch(() => toast('Stop failed', 'err'));
+  } else {
+    if (S.streaming) toast('Warning: live stream active during timelapse', 'warn');
+    fetch('/timelapse/start')
+      .then(() => { toast('Timelapse started', 'ok'); fetchStatus(); })
+      .catch(() => toast('Start failed', 'err'));
+  }
+}
+function setTlTrigger(val) {
+  fetch('set_tl_trigger?val=' + val)
+    .then(() => toast('Trigger: ' + val, 'ok'))
+    .catch(() => toast('Save failed', 'err'));
+  document.getElementById('pl-cfg').classList.toggle('hidden', val !== 'printer');
+}
+function setTlMaxFrames() {
+  const val = parseInt(document.getElementById('tl-max-frames').value, 10);
+  if (isNaN(val) || val < 0 || val > 65534) { toast('Invalid value (0–65534)', 'err'); return; }
+  fetch('/set_tl_max_frames?val=' + val)
+    .then(() => toast(val === 0 ? 'Max frames: unlimited' : 'Max frames/file: ' + val, 'ok'))
+    .catch(() => toast('Save failed', 'err'));
+}
+function applyPlStatus(d) {
+  const state = d.pl_last_state || '';
+  const reachable = d.pl_reachable === 'true';
+  const badge = document.getElementById('pl-state-badge');
+  if (!reachable && !state) {
+    badge.textContent = '—';
+    badge.className = 'px-1.5 py-0.5 rounded text-xs font-mono font-semibold bg-panel text-muted';
+  } else if (!reachable) {
+    badge.textContent = 'OFFLINE';
+    badge.className = 'px-1.5 py-0.5 rounded text-xs font-mono font-semibold bg-danger/20 text-danger';
+  } else {
+    const cls = {
+      PRINTING:  'bg-orange/20 text-orange',
+      PAUSED:    'bg-warn/20 text-warn',
+      ERROR:     'bg-danger/20 text-danger',
+      ATTENTION: 'bg-danger/20 text-danger',
+    }[state] || 'bg-panel text-sub';
+    badge.textContent = state || 'UNKNOWN';
+    badge.className = 'px-1.5 py-0.5 rounded text-xs font-mono font-semibold ' + cls;
+  }
+  const printing = state === 'PRINTING';
+  const prog = parseInt(d.pl_progress, 10);
+  const hasProg = printing && prog >= 0;
+  document.getElementById('pl-progress-row').classList.toggle('hidden', !hasProg);
+  if (hasProg) {
+    setText('pl-progress-val', prog + '%');
+    document.getElementById('pl-progress-bar').style.width = prog + '%';
+  }
+  const nozzle = parseFloat(d.pl_nozzle);
+  const bed    = parseFloat(d.pl_bed);
+  const hasTemps = reachable && nozzle >= 0 && bed >= 0;
+  document.getElementById('pl-temps-row').classList.toggle('hidden', !hasTemps);
+  if (hasTemps) {
+    setText('pl-nozzle', nozzle.toFixed(1));
+    setText('pl-bed',    bed.toFixed(1));
+  }
+}
+function savePlEnable(v) {
+  fetch('set_prusa_link_enable?val=' + (v ? 'true' : 'false'))
+    .then(() => toast('PrusaLink ' + (v ? 'enabled' : 'disabled'), 'ok'))
+    .catch(() => toast('Save failed', 'err'));
+}
+function savePlIp() {
+  const ip = document.getElementById('pl-ip').value.trim();
+  fetch('set_prusa_link_ip?val=' + encodeURIComponent(ip))
+    .then(() => toast('Printer IP saved', 'ok'))
+    .catch(() => toast('Save failed', 'err'));
+}
+function savePlKey() {
+  const key = document.getElementById('pl-key').value;
+  if (!key) return;
+  fetch('set_prusa_link_key?val=' + encodeURIComponent(key))
+    .then(() => { toast('API key saved', 'ok'); document.getElementById('pl-key').value = ''; })
+    .catch(() => toast('Save failed', 'err'));
+}
+
+// ── Camera controls ────────────────────────────────────────────────────
+function setCamInt(k, v) {
+  fetch('set_int?' + k + '=' + v).catch(() => {});
+}
+function setCamBool(k, v) {
+  fetch('set_bool?' + k + '=' + (v ? 'true' : 'false')).catch(() => {});
+}
+function toggleLed() {
+  fetch('/action_led').catch(() => {});
+}
+function toggleFlash() {
+  const on = document.getElementById('flash-toggle').checked;
+  setCamBool('flash', on);
+}
+
+// ── Actions ────────────────────────────────────────────────────────────
+function doCapture() {
+  if (S.busy || S.uploading) return;
+  S.busy = true; updateActionButtons();
+  fetch('/action_send', { signal: AbortSignal.timeout(10000) })
+    .then(r => { if (!r.ok) throw new Error(r.status); })
+    .then(() => { toast('Captured & uploaded', 'ok'); refreshSnap(); })
+    .catch(e => toast(e.name === 'TimeoutError' ? 'Device busy, try again' : 'Capture failed', 'err'))
+    .finally(() => { S.busy = false; updateActionButtons(); });
+}
+function doSnap() {
+  if (S.busy || S.uploading) return;
+  S.busy = true; updateActionButtons();
+  fetch('/action_capture', { signal: AbortSignal.timeout(10000) })
+    .then(r => { if (!r.ok) throw new Error(r.status); })
+    .then(() => { toast('Snapshot saved', 'ok'); setTimeout(refreshSnap, 2500); })
+    .catch(e => toast(e.name === 'TimeoutError' ? 'Device busy, try again' : 'Snapshot failed', 'err'))
+    .finally(() => { S.busy = false; updateActionButtons(); });
+}
+function confirmReboot() {
+  if (confirm('Reboot the device?'))
+    fetch('/action_reboot')
+      .then(() => toast('Rebooting…', 'warn'))
+      .catch(() => {});
+}
+
+// ── Config saves ───────────────────────────────────────────────────────
+function saveToken() {
+  const v = document.getElementById('cfg-token').value.trim();
+  if (!v) return;
+  fetch('set_token?token=' + encodeURIComponent(v))
+    .then(() => toast('Token saved', 'ok'))
+    .catch(() => toast('Save failed', 'err'));
+}
+function saveRefresh() {
+  const v = +document.getElementById('cfg-refresh').value;
+  if (v < 10 || v > 240) { toast('Interval must be 10–240 s', 'err'); return; }
+  fetch('set_int?refresh=' + v)
+    .then(() => {
+      toast('Interval saved', 'ok');
+      S.snapInterval = v;
+      setSlider('snap-interval', v);
+      setText('snap-interval-val', v + 's');
+      restartSnapTimer();
+    })
+    .catch(() => toast('Save failed', 'err'));
+}
+function syncUploadDependents(enabled) {
+  const el  = document.getElementById('pl-stop-upload');
+  const row = document.getElementById('pl-stop-upload-row');
+  if (!el || !row) return;
+  el.disabled = !enabled;
+  row.classList.toggle('opacity-50', !enabled);
+  row.classList.toggle('pointer-events-none', !enabled);
+}
+function setUploadEnable(v) {
+  syncUploadDependents(v);
+  fetch('/set_bool?upload_enable=' + v)
+    .then(() => toast('Upload ' + (v ? 'enabled' : 'disabled'), 'ok'))
+    .catch(() => toast('Save failed', 'err'));
+}
+function setPlStopUploadOnDone(v) {
+  fetch('/set_pl_stop_upload_on_done?val=' + v)
+    .then(() => toast('Stop upload on done: ' + (v ? 'on' : 'off'), 'ok'))
+    .catch(() => toast('Save failed', 'err'));
+}
+function saveHostname() {
+  const v = document.getElementById('cfg-hostname').value.trim();
+  if (!v) return;
+  fetch('set_hostname?hostname=' + encodeURIComponent(v))
+    .then(() => toast('Hostname saved', 'ok'))
+    .catch(() => toast('Save failed', 'err'));
+}
+function saveWifi() {
+  const s = document.getElementById('cfg-ssid').value.trim();
+  const p = document.getElementById('cfg-pass').value;
+  if (!s) { toast('SSID required', 'err'); return; }
+  fetch('wifi_cfg?wifi_ssid=' + encodeURIComponent(s) + '&wifi_pass=' + encodeURIComponent(p))
+    .then(() => toast('WiFi saved — reconnecting…', 'ok'))
+    .catch(() => toast('Save failed', 'err'));
+}
+
+// ── WiFi scan ──────────────────────────────────────────────────────────
+function scanWifi() {
+  setText('wifi-networks', 'Scanning…');
+  fetch('wifi_scan')
+    .then(() => setTimeout(loadWifiList, 6000))
+    .catch(() => setText('wifi-networks', 'Scan request failed.'));
+}
+function loadWifiList() {
+  fetch('json_wifi', { signal: AbortSignal.timeout(15000) })
+    .then(r => r.json())
+    .then(nets => {
+      const el = document.getElementById('wifi-networks');
+      el.textContent = '';
+      if (!nets || !nets.length) { el.textContent = 'No networks found.'; return; }
+      nets.forEach(n => {
+        const btn = document.createElement('button');
+        btn.className = 'w-full text-left px-2 py-2 rounded hover:bg-base flex justify-between items-center';
+        btn.addEventListener('click', () => {
+          document.getElementById('cfg-ssid').value = n.ssid;
+        });
+        const nameSpan = document.createElement('span');
+        nameSpan.textContent = n.ssid;
+        const rssiSpan = document.createElement('span');
+        rssiSpan.className = 'text-muted font-mono text-xs';
+        rssiSpan.textContent = n.rssi + ' dBm';
+        btn.appendChild(nameSpan);
+        btn.appendChild(rssiSpan);
+        el.appendChild(btn);
+      });
+    })
+    .catch(() => setText('wifi-networks', 'Scan failed.'));
+}
+
+// ── TL files ───────────────────────────────────────────────────────────
+function loadTlFiles() {
+  fetch('/timelapse/list', { signal: AbortSignal.timeout(5000) })
+    .then(r => r.json())
+    .then(files => {
+      const el = document.getElementById('tl-file-list');
+      el.textContent = '';
+      if (!files || !files.length) {
+        const p = document.createElement('p');
+        p.className = 'p-3 text-muted';
+        p.textContent = 'No timelapse files.';
+        el.appendChild(p);
+        return;
+      }
+      files.forEach(f => {
+        const row = document.createElement('div');
+        row.className = 'flex items-center justify-between px-3 py-3';
+        const info = document.createElement('div');
+        info.className = 'min-w-0 mr-2';
+        const name = document.createElement('div');
+        name.className = 'font-mono text-text truncate';
+        /* the leading tl_<stamp>_ is redundant once the date is shown underneath */
+        name.textContent = f.name.replace(/^tl_(\d{8}_\d{6}|ms\d+)_?/, '') || f.name;
+        name.title = f.name;
+        const meta = document.createElement('div');
+        meta.className = 'text-muted text-sm truncate';
+        const mb = (typeof f.sizeMB === 'number') ? f.sizeMB.toFixed(1) + ' MB' : '';
+        meta.textContent = [f.date || 'date unknown', mb].filter(Boolean).join(' · ');
+        info.appendChild(name);
+        info.appendChild(meta);
+        const actions = document.createElement('div');
+        actions.className = 'flex gap-3 shrink-0';
+        const dl = document.createElement('a');
+        dl.className = 'text-orange font-semibold';
+        dl.textContent = 'DL';
+        dl.href = '/timelapse/download?file=' + encodeURIComponent(f.name);
+        dl.setAttribute('download', f.name);
+        const del = document.createElement('button');
+        del.className = 'text-danger font-semibold';
+        del.textContent = 'DEL';
+        del.addEventListener('click', () => deleteTlFile(f.name));
+        actions.appendChild(dl);
+        actions.appendChild(del);
+        row.appendChild(info);
+        row.appendChild(actions);
+        el.appendChild(row);
+      });
+    })
+    .catch(() => {
+      const el = document.getElementById('tl-file-list');
+      el.textContent = '';
+      const p = document.createElement('p');
+      p.className = 'p-3 text-muted';
+      p.textContent = 'Could not load.';
+      el.appendChild(p);
+    });
+}
+function deleteTlFile(f) {
+  if (!confirm('Delete ' + f + '?')) return;
+  fetch('/timelapse/delete?file=' + encodeURIComponent(f))
+    .then(() => { toast('Deleted: ' + f, 'ok'); loadTlFiles(); })
+    .catch(() => toast('Delete failed', 'err'));
+}
+function deleteAllTlFiles() {
+  if (!confirm('Delete ALL timelapse files? This cannot be undone.')) return;
+  fetch('/timelapse/delete_all')
+    .then(r => r.text())
+    .then(msg => { toast(msg, 'ok'); loadTlFiles(); })
+    .catch(() => toast('Delete all failed', 'err'));
+}
+
+// ── Logs ───────────────────────────────────────────────────────────────
+function loadLogs() {
+  fetch('/log', { signal: AbortSignal.timeout(5000) })
+    .then(r => r.json())
+    .then(entries => {
+      const el = document.getElementById('log-panel');
+      el.textContent = '';
+      if (!entries || !entries.length) { el.textContent = 'No log entries.'; return; }
+      entries.forEach(e => {
+        const div = document.createElement('div');
+        div.className = 'py-0.5';
+        div.textContent = e;
+        el.appendChild(div);
+      });
+      el.scrollTop = el.scrollHeight;
+    })
+    .catch(() => { document.getElementById('log-panel').textContent = 'Could not load logs.'; });
+}
+
+// ── Tabs ───────────────────────────────────────────────────────────────
+function switchTab(btn) {
+  document.querySelectorAll('.tab-btn').forEach(b => {
+    b.classList.remove('active');
+    b.setAttribute('aria-selected', 'false');
+  });
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.add('hidden'));
+  btn.classList.add('active');
+  btn.setAttribute('aria-selected', 'true');
+  const pane = document.getElementById('tab-' + btn.dataset.tab);
+  pane.classList.remove('hidden');
+  if (btn.dataset.tab === 'tl-files') loadTlFiles();
+  if (btn.dataset.tab === 'logs') loadLogs();
+}
+
+// ── Toasts ─────────────────────────────────────────────────────────────
+function toast(msg, type) {
+  const c = {
+    ok:   'bg-success/20 border-success/50 text-success',
+    warn: 'bg-warn/20 border-warn/50 text-warn',
+    err:  'bg-danger/20 border-danger/50 text-danger',
+  };
+  const el = document.createElement('div');
+  el.className = 'toast border rounded px-4 py-2.5 text-xs pointer-events-auto ' + (c[type] || c.ok);
+  el.textContent = msg;
+  document.getElementById('toasts').appendChild(el);
+  setTimeout(() => {
+    el.style.opacity = '0';
+    el.style.transition = 'opacity .3s';
+    setTimeout(() => el.remove(), 300);
+  }, 3500);
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────
+function setText(id, val) {
+  const e = document.getElementById(id);
+  if (e) e.textContent = val;
+}
+function setSlider(id, val) {
+  const e = document.getElementById(id);
+  if (!e || val === undefined || val === null) return;
+  e.value = val;
+  const lbl = document.getElementById(id + '-val');
+  if (lbl) lbl.textContent = (id === 'snap-interval' ? val + 's' : val);
+}
+
+/* ---- Firmware update (on-demand only) ----
+   No background polling: otaPoll runs solely while a check or install is in flight,
+   and stops itself the moment the device reports it is no longer busy. */
+let otaTimer = null;
+function otaMsg(m) { const e = document.getElementById('ota-msg'); if (e) e.textContent = m || ''; }
+function otaShow(id, on) { const e = document.getElementById(id); if (e) e.classList.toggle('hidden', !on); }
+function otaPoll() {
+  fetch('ota/status').then(r => r.json()).then(s => {
+    otaMsg((s.state === 4 && s.progress > 0) ? s.message + ' (' + s.progress + '%)' : s.message);
+    const b = document.getElementById('ota-check'); if (b) b.disabled = s.busy;
+    otaShow('ota-install', s.state === 3);   /* 3 = update available */
+    otaShow('ota-reboot',  s.state === 5);   /* 5 = written, awaiting reboot */
+    if (!s.busy && otaTimer) { clearInterval(otaTimer); otaTimer = null; }
+  }).catch(() => {});
+}
+function otaWatch() { if (!otaTimer) { otaTimer = setInterval(otaPoll, 1000); otaPoll(); } }
+function otaCheck() {
+  otaMsg('Checking...');
+  fetch('ota/check').then(otaWatch).catch(() => otaMsg('Request failed'));
+}
+function otaInstall() {
+  if (!confirm('Download and install the new firmware? The camera goes offline for about a minute and must reboot afterwards.')) return;
+  otaMsg('Starting...');
+  fetch('ota/install').then(r => r.text()).then(t => { if (t !== 'installing') otaMsg(t); otaWatch(); })
+    .catch(() => otaMsg('Request failed'));
+}
+function otaReboot() { fetch('action_reboot'); otaMsg('Rebooting - this page will stop responding for about 20 s.'); }
+
+</script>
+</body>
+</html>

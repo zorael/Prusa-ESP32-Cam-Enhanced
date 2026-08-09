@@ -1,0 +1,205 @@
+name: Build & Release
+
+# Tag a release:  git tag v1.1.3 && git push origin v1.1.3
+# The tag must match SW_VERSION in src/mcu_cfg.h — see the guard below.
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  # Only ai_thinker for now. The other five environments in platformio.ini are
+  # unverified against this firmware's camera/PSRAM changes; add them here once
+  # they have actually been flashed and tested on hardware.
+  BOARD: ai_thinker
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # PlatformIO downloads a ~200 MB toolchain; caching turns a 4 min job into ~1 min.
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio/.cache
+            ~/.platformio/packages
+            ~/.platformio/platforms
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+          restore-keys: pio-${{ runner.os }}-
+
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+
+      # The stylesheet is built ahead of time, so Tailwind only emits classes it
+      # can find as literal text in index.html. A class assembled at runtime
+      # ('bg-' + colour) compiles fine and then does nothing on the device. These
+      # two steps catch that in CI instead of after a reflash.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: webpage/package-lock.json
+
+      - name: Check web UI stylesheet
+        working-directory: webpage
+        run: |
+          npm ci
+          npm run build
+          # styles.css is committed; a rebuild must not change it, or the firmware
+          # is shipping CSS that does not match index.html.
+          if ! git diff --quiet -- styles.css; then
+            echo "::error::styles.css is stale. Run 'cd webpage && npm run build' and commit the result."
+            git diff --stat -- styles.css
+            exit 1
+          fi
+          python check_classes.py
+
+      # WebPage_gz.h is what the firmware actually serves. The generator pins the
+      # gzip mtime, so regenerating unchanged sources is a no-op — any diff here
+      # means someone edited webpage/ without regenerating.
+      - name: Check generated web assets are current
+        working-directory: webpage
+        run: |
+          python webpage_gz_generator.py
+          if ! git diff --quiet -- ../src/WebPage_gz.h; then
+            echo "::error::src/WebPage_gz.h is stale. Run 'cd webpage && python webpage_gz_generator.py' and commit it."
+            exit 1
+          fi
+
+      # A tagged build whose SW_VERSION disagrees with the tag would ship firmware
+      # that reports the wrong version to Prusa Connect and in /log. Fail loudly
+      # rather than publish that.
+      - name: Verify tag matches SW_VERSION
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          # POSIX sed, not grep -oP: -P depends on both a PCRE-enabled grep and a
+          # UTF-8 locale, and when it is unavailable it fails to an EMPTY string,
+          # which would silently pass any comparison it was meant to guard.
+          SW=$(sed -n 's/.*#define[[:space:]]\{1,\}SW_VERSION[[:space:]]\{1,\}"\([^"]*\)".*/\1/p' src/mcu_cfg.h)
+          echo "tag=$TAG  SW_VERSION=$SW"
+          if [ -z "$SW" ]; then
+            echo "::error::Could not read SW_VERSION from src/mcu_cfg.h — refusing to publish."
+            exit 1
+          fi
+          if [ "$TAG" != "$SW" ]; then
+            echo "::error::Tag v$TAG does not match SW_VERSION \"$SW\" in src/mcu_cfg.h."
+            echo "::error::Update SW_VERSION (or retag) so the device reports its real version."
+            exit 1
+          fi
+
+      - name: Build
+        run: pio run -e ${{ env.BOARD }}
+
+      # firmware.factory.bin is a single image containing bootloader (0x1000),
+      # partition table (0x8000), boot_app0 (0xe000) and the app (0x10000).
+      # Shipping this instead of four separate files means nobody has to type
+      # offsets, and nobody can flash the app onto a mismatched partition table —
+      # which matters here because this project uses min_spiffs.csv, not the default.
+      - name: Stage artifacts
+        run: |
+          mkdir -p dist
+          SRC=.pio/build/${{ env.BOARD }}
+          cp "$SRC/firmware.factory.bin" "dist/firmware-${{ env.BOARD }}.factory.bin"
+          cp "$SRC/firmware.bin"         "dist/firmware-${{ env.BOARD }}.app.bin"
+          ls -l dist
+          {
+            echo "### Build: ${{ env.BOARD }}"
+            echo '```'
+            pio run -e ${{ env.BOARD }} 2>&1 | grep -E "^(RAM|Flash):" || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ env.BOARD }}
+          path: dist/
+          retention-days: 14
+
+      # Pages hosts the web flasher AND the binary it installs. Serving both from
+      # the same origin sidesteps the CORS/redirect problems that come with
+      # pointing a manifest at a GitHub release asset URL.
+      - name: Assemble Pages site
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          mkdir -p site
+          cp -r docs/* site/
+          cp "dist/firmware-${{ env.BOARD }}.factory.bin" site/
+          sed -i "s/__VERSION__/${GITHUB_REF_NAME}/g" site/manifest-${{ env.BOARD }}.json site/index.html
+
+      - name: Upload Pages artifact
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Create release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          body: |
+            ## Flashing
+
+            **Easiest — browser flasher (Chrome or Edge):**
+            https://gw-tan.github.io/Prusa-ESP32-Cam-Enhanced/
+
+            **Command line:**
+            ```
+            esptool.py --chip esp32 write_flash 0x0 firmware-ai_thinker.factory.bin
+            ```
+
+            `firmware-*.factory.bin` is a complete image — bootloader, partition
+            table and application. Flash it at offset `0x0`. Do not use
+            `*.app.bin` unless you know why you want it; it omits the partition
+            table, and this firmware does not use the default one.
+
+            ### This clears your settings
+
+            `firmware-*.factory.bin` is a contiguous image starting at `0x0`, so
+            the padding between partitions is written too — including the NVS
+            region that holds your WiFi credentials and Prusa Connect token.
+            After flashing it you will go through setup again. That is correct
+            for a new device, and expected for a clean reinstall.
+
+            **To upgrade and keep your settings**, flash the app partition only:
+
+            ```
+            esptool.py --chip esp32 write_flash 0x10000 firmware-ai_thinker.app.bin
+            ```
+
+            That leaves every other partition untouched. Use it only when
+            upgrading an existing install — it does not write the partition
+            table, so it cannot set up a blank device.
+
+            Built and tested on AI Thinker ESP32-CAM. Other boards are not yet
+            verified against this build.
+
+  # Publishing is a separate job because deploy-pages needs its own permissions
+  # and environment, which would otherwise widen the build job's token scope.
+  deploy-pages:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

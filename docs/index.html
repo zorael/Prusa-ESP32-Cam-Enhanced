@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flash Prusa ESP32-Cam Enhanced</title>
+<script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+<style>
+  :root { --bg:#14110f; --fg:#f2efec; --muted:#a29a92; --orange:#fa6831; --line:#2b2724; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#fbfaf9; --fg:#1b1815; --muted:#6b635b; --line:#e3ddd7; }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin:0; padding:2.5rem 1.25rem; background:var(--bg); color:var(--fg);
+    font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  }
+  main { max-width: 46rem; margin: 0 auto; }
+  h1 { font-size: 1.7rem; margin: 0 0 .25rem; letter-spacing:-.02em; }
+  .sub { color: var(--muted); margin: 0 0 2rem; }
+  .card { border:1px solid var(--line); border-radius:12px; padding:1.5rem; margin:0 0 1.5rem; }
+  .cta { text-align:center; padding:2rem 1.5rem; }
+  esp-web-install-button { --esp-tools-button-color: var(--orange); }
+  h2 { font-size:1.05rem; margin:1.75rem 0 .5rem; }
+  code, pre { font-family: ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.875rem; }
+  pre { background:rgba(127,127,127,.12); padding:.85rem 1rem; border-radius:8px; overflow-x:auto; }
+  code:not(pre code) { background:rgba(127,127,127,.15); padding:.1rem .35rem; border-radius:4px; }
+  ul { padding-left:1.15rem; } li { margin:.3rem 0; }
+  .warn { border-left:3px solid var(--orange); padding-left:.9rem; color:var(--muted); }
+  a { color: var(--orange); }
+  footer { color:var(--muted); font-size:.85rem; border-top:1px solid var(--line); margin-top:2.5rem; padding-top:1rem; }
+  .unsupported { display:none; color:var(--orange); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Prusa ESP32-Cam Enhanced</h1>
+  <p class="sub">Flash your ESP32-CAM directly from this page — version <strong>__VERSION__</strong></p>
+
+  <div class="card cta">
+    <esp-web-install-button manifest="manifest-ai_thinker.json">
+      <button slot="activate">Connect &amp; Install</button>
+      <span slot="unsupported" class="unsupported">
+        This browser can't talk to serial devices. Use Chrome or Edge on desktop,
+        or flash from the command line below.
+      </span>
+      <span slot="not-allowed" class="unsupported">
+        Serial access was blocked. This page must be served over HTTPS.
+      </span>
+    </esp-web-install-button>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0">Before you start</h2>
+    <ul>
+      <li>Board: <strong>AI Thinker ESP32-CAM</strong>. Other boards aren't verified against this build yet.</li>
+      <li>You need a USB&ndash;serial adapter. The ESP32-CAM has no USB port of its own.</li>
+      <li>To enter flash mode: connect <code>GPIO0</code> to <code>GND</code>, then power on or press reset.
+          Remove the jumper afterwards, or it will boot back into the bootloader.</li>
+      <li>Chrome or Edge on desktop. Firefox and Safari don't implement WebSerial.</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0">This will clear your settings</h2>
+    <p class="warn">
+      <strong>Yes, even without choosing &ldquo;erase&rdquo;.</strong> The factory image is a
+      single continuous block starting at address&nbsp;0, so the padding between
+      partitions gets written too &mdash; including the area holding your WiFi
+      credentials and Prusa Connect token. Expect to run through setup again after
+      flashing from this page. That's correct for a new device.
+    </p>
+    <p>
+      <strong>Already running this firmware and just want the new version?</strong>
+      Flash the application on its own, which leaves everything else alone:
+    </p>
+    <pre>esptool.py --chip esp32 write_flash 0x10000 firmware-ai_thinker.app.bin</pre>
+    <p class="warn">
+      Only use that on a device already running this firmware. It doesn't write the
+      partition table, so it can't set up a blank board.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0">Command line instead</h2>
+    <p>Download <code>firmware-ai_thinker.factory.bin</code> from the
+      <a href="https://github.com/gw-tan/Prusa-ESP32-Cam-Enhanced/releases/latest">latest release</a>, then:</p>
+    <pre>esptool.py --chip esp32 write_flash 0x0 firmware-ai_thinker.factory.bin</pre>
+    <p class="warn">
+      Flash the <code>.factory.bin</code>, not the <code>.app.bin</code>. The factory
+      image includes the partition table; this firmware does not use the ESP32
+      default one, so flashing the app alone onto a mismatched table produces a
+      device that won't boot.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0">After flashing</h2>
+    <ul>
+      <li>The camera starts a setup access point named <code>ESP32_camera_*</code>.</li>
+      <li>Connect to it and open <a href="http://192.168.0.1">192.168.0.1</a> to enter your WiFi details.</li>
+      <li>Once on your network it's reachable at <code>prusa-esp32cam.local</code>.</li>
+      <li>Add the token and fingerprint from Prusa Connect to start uploading.</li>
+    </ul>
+  </div>
+
+  <div class="card" style="border-left:3px solid var(--orange)">
+    <p style="margin:0"><strong>Not a Prusa product.</strong> This is a community
+    fork of <a href="https://github.com/prusa3d/Prusa-Firmware-ESP32-Cam">prusa3d/Prusa-Firmware-ESP32-Cam</a>,
+    not affiliated with, endorsed by or supported by Prusa Research. &ldquo;Prusa&rdquo;,
+    &ldquo;Prusa Connect&rdquo; and &ldquo;PrusaLink&rdquo; are their trademarks, used
+    to describe compatibility. Report problems
+    <a href="https://github.com/gw-tan/Prusa-ESP32-Cam-Enhanced/issues">here</a>,
+    not to Prusa.</p>
+  </div>
+
+  <footer>
+    <a href="https://github.com/gw-tan/Prusa-ESP32-Cam-Enhanced">Source</a> &middot;
+    GPL-3.0 &middot; forked from
+    <a href="https://github.com/prusa3d/Prusa-Firmware-ESP32-Cam">prusa3d/Prusa-Firmware-ESP32-Cam</a>
+  </footer>
+</main>
+</body>
+</html>

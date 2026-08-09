@@ -1,0 +1,12 @@
+{
+  "name": "prusa-esp32cam-webui",
+  "private": true,
+  "description": "Builds the device's stylesheet. Only needed when you add or remove a Tailwind class in index.html.",
+  "scripts": {
+    "build": "tailwindcss -i tailwind.src.css -o styles.css --minify",
+    "watch": "tailwindcss -i tailwind.src.css -o styles.css --watch"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.17"
+  }
+}

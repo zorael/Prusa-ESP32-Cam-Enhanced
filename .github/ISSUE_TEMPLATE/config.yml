@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Bug in the stock Prusa firmware
+    url: https://github.com/prusa3d/Prusa-Firmware-ESP32-Cam/issues
+    about: If it reproduces on upstream firmware too, report it there — this fork only diverges in the upload path, task model, timelapse, OTA and web UI.
+  - name: Security vulnerability
+    url: https://github.com/gw-tan/Prusa-ESP32-Cam-Enhanced/security/advisories/new
+    about: Report privately rather than in a public issue. See SECURITY.md.

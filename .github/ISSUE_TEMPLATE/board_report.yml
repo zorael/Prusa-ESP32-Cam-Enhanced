@@ -1,0 +1,52 @@
+name: Board verification report
+description: You flashed a board other than the AI Thinker — tell us how it went
+labels: [board-support]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Only the AI Thinker ESP32-CAM is tested. The other environments in
+        `platformio.ini` compile but have never been flashed against this
+        firmware's camera and PSRAM changes. Reports either way are useful —
+        "it just works" is as valuable as a failure.
+
+  - type: input
+    id: board
+    attributes:
+      label: Board and PlatformIO environment
+      placeholder: "Freenove ESP32-S3-Wroom  /  -e freenove_s3_wroom"
+    validations:
+      required: true
+
+  - type: input
+    id: camera
+    attributes:
+      label: Camera sensor
+      placeholder: "OV2640"
+
+  - type: dropdown
+    id: result
+    attributes:
+      label: Result
+      options:
+        - Works — capture and upload both fine
+        - Partly works — some things broken
+        - Does not work
+    validations:
+      required: true
+
+  - type: textarea
+    id: detail
+    attributes:
+      label: What worked and what didn't
+      description: |
+        Capture, upload to Prusa Connect, live stream, SD card, timelapse,
+        flash LED, OTA. Note anything you had to change to get it going.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Boot log
+      render: text
