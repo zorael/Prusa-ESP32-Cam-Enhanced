@@ -14,8 +14,13 @@
 
 #include "mcu_cfg.h"
 
+/* The board is selected by the -D in the PlatformIO environment; mcu_cfg.h only
+   supplies false defaults for the rest. Zero means you built without an
+   environment (or with one that names no board); more than one means two flags
+   collided. Both must fail here — the alternative is a binary that silently
+   belongs to a different board than its filename claims. */
 #if ((AI_THINKER_ESP32_CAM + ESP32_WROVER_DEV + CAMERA_MODEL_ESP32_S3_DEV_CAM + CAMERA_MODEL_ESP32_S3_EYE_2_2 + CAMERA_MODEL_XIAO_ESP32_S3_CAM + CAMERA_MODEL_ESP32_S3_CAM + ESP32_S3_WROOM_FREENOVE) != 1)
-#error "Exactly one camera model must be defined as true."
+#error "Exactly one camera model must be true. Build via a PlatformIO environment, e.g. 'pio run -e wrover' — see build_flags in platformio.ini."
 #endif
 
 #if (true == AI_THINKER_ESP32_CAM)

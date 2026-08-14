@@ -62,7 +62,7 @@
 #define ENABLE_PSRAM                true    ///< Enable PSRAM   
 
 /* --------------- OTA UPDATE CFG  --------------*/
-#define OTA_UPDATE_FW_FILE          PSTR("ESP32S3_EYE22.bin") ///< OTA update firmware file name
+#define OTA_ASSET_NAME              "firmware-esp32s3_eye.app.bin" ///< release asset for env:esp32s3_eye (not published yet — OTA will report it missing)
 #define FW_STATUS_LED_PIN           3      ///< GPIO pin for status FW update LED
 #define FW_STATUS_LED_LEVEL_ON      LOW    ///< GPIO pin level for status LED ON
 

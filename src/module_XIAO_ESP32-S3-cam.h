@@ -65,7 +65,7 @@
 #define ENABLE_PSRAM                true    ///< Enable PSRAM   
 
 /* --------------- OTA UPDATE CFG  --------------*/
-#define OTA_UPDATE_FW_FILE          PSTR("XIAO_ESP32S3.bin") ///< OTA update firmware file name
+#define OTA_ASSET_NAME              "firmware-xiao_esp32s3.app.bin" ///< release asset for env:xiao_esp32s3 (not published yet — OTA will report it missing)
 #define FW_STATUS_LED_PIN           21      ///< GPIO pin for status FW update LED
 #define FW_STATUS_LED_LEVEL_ON      LOW    ///< GPIO pin level for status LED ON
 

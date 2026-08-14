@@ -39,6 +39,33 @@ All library dependencies are declared in `platformio.ini` and fetched automatica
 
 Each supported board has a `src/module_<BOARD_NAME>.h` file (e.g. `src/module_AI_Thinker_ESP32-CAM.h`) that defines all GPIO pin numbers, flash LED control method (PWM/digital/NeoPixel), PSRAM availability, and feature flags. These are guarded by the `#ifdef` matching the board define set via `platformio.ini` `build_flags`. `src/mcu_cfg.h` holds all tuneable constants: task intervals, WDT timeout, photo fragment size, EEPROM address map, Prusa Connect URL paths, OTA server, factory defaults.
 
+**Board selection is by macro value, and `mcu_cfg.h` must not clobber it.**
+`module_templates.h` picks the header with `#if (true == BOARD)`, not `#ifdef` —
+every board macro is always *defined*, so `#ifdef` would match all of them. The
+values come from the environment's `-DBOARD=true` in `platformio.ini`, and
+`mcu_cfg.h` supplies `#ifndef`-guarded `false` defaults for the rest. It used to
+define all seven unconditionally, which overwrote the `-D` and made **every
+environment build AI Thinker firmware** — `pio run -e wrover` produced an image
+whose only WROVER-ness was its filename, and nothing in a green build showed it.
+Keep those defaults `#ifndef`-guarded, and never add a fallback board: a build
+with no flag must fail the `!= 1` guard in `module_templates.h`. CI now greps each
+artifact for its own `OTA_ASSET_NAME` and for every other board's, which is what
+catches a regression here.
+
+**`OTA_ASSET_NAME` belongs in the board header, never in `mcu_cfg.h`.** OTA matches
+GitHub release assets by exact filename, and that match is the only thing stopping a
+board from installing another board's image — wrong camera pins at best, and an
+ESP32-S3 app on an ESP32 will not boot at all. It must equal
+`firmware-<platformio env>.app.bin`; `release.yml` fails the build if a published
+board's header disagrees, and `ota.cpp` `#error`s if a header omits it entirely. A
+board with no published binary keeps its declared name and is simply told the asset
+is missing, which is the correct outcome.
+
+Boards differ in what they physically have, and the SPA has to know: `json_input`
+carries `sd_hw` (from `ENABLE_SD_CARD`) so a board without an SD card hides the
+timelapse UI instead of offering buttons that answer 503. That is distinct from
+`sd_status`, which reports whether a card is *inserted*.
+
 ### EEPROM address map — read before touching it
 
 The map in `mcu_cfg.h` is a **chain**: every `_START` is computed as the previous

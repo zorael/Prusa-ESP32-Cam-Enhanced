@@ -50,7 +50,7 @@
 #define ENABLE_PSRAM                true   ///< Enable PSRAM   
 
 /* --------------- OTA UPDATE CFG  --------------*/
-#define OTA_UPDATE_FW_FILE          PSTR("ESP32_WROVERDEV.bin") ///< OTA update firmware file name
+#define OTA_ASSET_NAME              "firmware-wrover.app.bin" ///< release asset for env:wrover
 #define FW_STATUS_LED_PIN           2      ///< GPIO pin for status FW update LED
 #define FW_STATUS_LED_LEVEL_ON      LOW    ///< GPIO pin level for status LED ON
 

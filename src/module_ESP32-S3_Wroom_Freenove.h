@@ -62,7 +62,7 @@
 #define ENABLE_PSRAM                true   ///< Enable PSRAM
 
 /* --------------- OTA UPDATE CFG  --------------*/
-#define OTA_UPDATE_FW_FILE          PSTR("ESP32-S3-WROOM_FREENOVE.bin") ///< OTA update firmware file name
+#define OTA_ASSET_NAME              "firmware-freenove_s3_wroom.app.bin" ///< release asset for env:freenove_s3_wroom (not published yet — OTA will report it missing)
 #define FW_STATUS_LED_PIN           2      ///< GPIO pin for status FW update LED
 #define FW_STATUS_LED_LEVEL_ON      LOW   ///< GPIO pin level for status LED ON
 

@@ -30,6 +30,13 @@
   a { color: var(--orange); }
   footer { color:var(--muted); font-size:.85rem; border-top:1px solid var(--line); margin-top:2.5rem; padding-top:1rem; }
   .unsupported { display:none; color:var(--orange); }
+  .board-pick { margin:0 0 1.5rem; text-align:left; }
+  .board-pick label { display:block; font-size:.85rem; color:var(--muted); margin-bottom:.35rem; }
+  .board-pick select {
+    width:100%; padding:.6rem .75rem; border-radius:8px; border:1px solid var(--line);
+    background:var(--bg); color:var(--fg); font:inherit; font-size:.95rem;
+  }
+  [hidden] { display:none !important; }
 </style>
 </head>
 <body>
@@ -38,7 +45,14 @@
   <p class="sub">Flash your ESP32-CAM directly from this page — version <strong>__VERSION__</strong></p>
 
   <div class="card cta">
-    <esp-web-install-button manifest="manifest-ai_thinker.json">
+    <div class="board-pick">
+      <label for="board">Your board</label>
+      <select id="board">
+        <option value="ai_thinker" selected>AI Thinker ESP32-CAM</option>
+        <option value="wrover">Freenove ESP32-WROVER-DEV</option>
+      </select>
+    </div>
+    <esp-web-install-button id="installer" manifest="manifest-ai_thinker.json">
       <button slot="activate">Connect &amp; Install</button>
       <span slot="unsupported" class="unsupported">
         This browser can't talk to serial devices. Use Chrome or Edge on desktop,
@@ -52,13 +66,27 @@
 
   <div class="card">
     <h2 style="margin-top:0">Before you start</h2>
-    <ul>
-      <li>Board: <strong>AI Thinker ESP32-CAM</strong>. Other boards aren't verified against this build yet.</li>
+    <ul data-board="ai_thinker">
       <li>You need a USB&ndash;serial adapter. The ESP32-CAM has no USB port of its own.</li>
       <li>To enter flash mode: connect <code>GPIO0</code> to <code>GND</code>, then power on or press reset.
           Remove the jumper afterwards, or it will boot back into the bootloader.</li>
       <li>Chrome or Edge on desktop. Firefox and Safari don't implement WebSerial.</li>
     </ul>
+    <ul data-board="wrover" hidden>
+      <li>The board has its own USB port &mdash; no separate serial adapter needed.</li>
+      <li>If it doesn't enter flash mode on its own, hold <code>BOOT</code> while
+          tapping <code>RESET</code>, then release.</li>
+      <li>Chrome or Edge on desktop. Firefox and Safari don't implement WebSerial.</li>
+    </ul>
+    <p class="warn" data-board="wrover" hidden>
+      <strong>Untested on hardware.</strong> This image builds from the same source
+      as the AI Thinker one and uses the board definition carried over from the
+      upstream Prusa firmware, but nobody has verified it on a real WROVER yet.
+      That board definition also declares no SD card, so <strong>timelapse and SD
+      logging are unavailable</strong> on it. Prusa Connect upload, streaming,
+      PrusaLink status and OTA don't depend on the board and should work.
+      <a href="https://github.com/gw-tan/Prusa-ESP32-Cam-Enhanced/issues">Tell me how it goes.</a>
+    </p>
   </div>
 
   <div class="card">
@@ -74,7 +102,7 @@
       <strong>Already running this firmware and just want the new version?</strong>
       Flash the application on its own, which leaves everything else alone:
     </p>
-    <pre>esptool.py --chip esp32 write_flash 0x10000 firmware-ai_thinker.app.bin</pre>
+    <pre>esptool.py --chip esp32 write_flash 0x10000 <span data-fw="app">firmware-ai_thinker.app.bin</span></pre>
     <p class="warn">
       Only use that on a device already running this firmware. It doesn't write the
       partition table, so it can't set up a blank board.
@@ -83,9 +111,9 @@
 
   <div class="card">
     <h2 style="margin-top:0">Command line instead</h2>
-    <p>Download <code>firmware-ai_thinker.factory.bin</code> from the
+    <p>Download <code data-fw="factory">firmware-ai_thinker.factory.bin</code> from the
       <a href="https://github.com/gw-tan/Prusa-ESP32-Cam-Enhanced/releases/latest">latest release</a>, then:</p>
-    <pre>esptool.py --chip esp32 write_flash 0x0 firmware-ai_thinker.factory.bin</pre>
+    <pre>esptool.py --chip esp32 write_flash 0x0 <span data-fw="factory">firmware-ai_thinker.factory.bin</span></pre>
     <p class="warn">
       Flash the <code>.factory.bin</code>, not the <code>.app.bin</code>. The factory
       image includes the partition table; this firmware does not use the ESP32
@@ -120,5 +148,33 @@
     <a href="https://github.com/prusa3d/Prusa-Firmware-ESP32-Cam">prusa3d/Prusa-Firmware-ESP32-Cam</a>
   </footer>
 </main>
+
+<script>
+  // One page, one binary per board. Everything board-specific on this page is
+  // marked up for both boards and switched here, so the filenames in the manual
+  // instructions can never disagree with what the install button would flash.
+  (function () {
+    var picker = document.getElementById('board');
+    var installer = document.getElementById('installer');
+
+    function applyBoard(board) {
+      // setAttribute, not the property: this runs before the custom element has
+      // necessarily upgraded, and the attribute is what it reads on upgrade.
+      installer.setAttribute('manifest', 'manifest-' + board + '.json');
+
+      document.querySelectorAll('[data-fw]').forEach(function (el) {
+        el.textContent = 'firmware-' + board + '.' + el.dataset.fw + '.bin';
+      });
+      document.querySelectorAll('[data-board]').forEach(function (el) {
+        el.hidden = (el.dataset.board !== board);
+      });
+    }
+
+    picker.addEventListener('change', function () { applyBoard(picker.value); });
+    // Read the live value rather than assuming the default — Firefox restores the
+    // previous selection across a reload before this runs.
+    applyBoard(picker.value);
+  })();
+</script>
 </body>
 </html>

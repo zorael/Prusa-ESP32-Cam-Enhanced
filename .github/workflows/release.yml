@@ -12,14 +12,10 @@ on:
 permissions:
   contents: write
 
-env:
-  # Only ai_thinker for now. The other five environments in platformio.ini are
-  # unverified against this firmware's camera/PSRAM changes; add them here once
-  # they have actually been flashed and tested on hardware.
-  BOARD: ai_thinker
-
 jobs:
-  build:
+  # Source-level checks. Board-independent, so they run once rather than once per
+  # matrix leg — a stale styles.css is one failure, not one per board.
+  checks:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -27,20 +23,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-
-      # PlatformIO downloads a ~200 MB toolchain; caching turns a 4 min job into ~1 min.
-      - name: Cache PlatformIO
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.platformio/.cache
-            ~/.platformio/packages
-            ~/.platformio/platforms
-          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
-          restore-keys: pio-${{ runner.os }}-
-
-      - name: Install PlatformIO
-        run: pip install --upgrade platformio
 
       # The stylesheet is built ahead of time, so Tailwind only emits classes it
       # can find as literal text in index.html. A class assembled at runtime
@@ -100,8 +82,60 @@ jobs:
             exit 1
           fi
 
+      # OTA matches release assets by exact filename, per board. A board header
+      # naming an asset the release never produces can only ever report "no such
+      # asset" — catch that here rather than leaving a device unable to update.
+      - name: Verify OTA asset names match published boards
+        run: |
+          rc=0
+          for board in ai_thinker wrover; do
+            want="firmware-${board}.app.bin"
+            # Exactly one header, or OTA is broken in one of two ways: none means
+            # that board can never find its update, two means two boards would
+            # install the same image.
+            n=$(grep -c "^#define[[:space:]]\{1,\}OTA_ASSET_NAME[[:space:]]\{1,\}\"${want}\"" src/module_*.h | grep -cv ':0$')
+            if [ "$n" -ne 1 ]; then
+              echo "::error::${n} board header(s) define OTA_ASSET_NAME as \"${want}\" — expected exactly 1."
+              grep -l "\"${want}\"" src/module_*.h || true
+              rc=1
+            fi
+          done
+          exit $rc
+
+  build:
+    needs: checks
+    runs-on: ubuntu-latest
+    strategy:
+      # One board failing should not hide whether the other still builds.
+      fail-fast: false
+      matrix:
+        board: [ai_thinker, wrover]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # PlatformIO downloads a ~200 MB toolchain; caching turns a 4 min job into ~1 min.
+      # Keyed per board so parallel legs do not race to write the same cache entry.
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio/.cache
+            ~/.platformio/packages
+            ~/.platformio/platforms
+          key: pio-${{ runner.os }}-${{ matrix.board }}-${{ hashFiles('platformio.ini') }}
+          restore-keys: |
+            pio-${{ runner.os }}-${{ matrix.board }}-
+            pio-${{ runner.os }}-
+
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+
       - name: Build
-        run: pio run -e ${{ env.BOARD }}
+        run: pio run -e ${{ matrix.board }}
 
       # firmware.factory.bin is a single image containing bootloader (0x1000),
       # partition table (0x8000), boot_app0 (0xe000) and the app (0x10000).
@@ -111,42 +145,81 @@ jobs:
       - name: Stage artifacts
         run: |
           mkdir -p dist
-          SRC=.pio/build/${{ env.BOARD }}
-          cp "$SRC/firmware.factory.bin" "dist/firmware-${{ env.BOARD }}.factory.bin"
-          cp "$SRC/firmware.bin"         "dist/firmware-${{ env.BOARD }}.app.bin"
+          SRC=.pio/build/${{ matrix.board }}
+          cp "$SRC/firmware.factory.bin" "dist/firmware-${{ matrix.board }}.factory.bin"
+          cp "$SRC/firmware.bin"         "dist/firmware-${{ matrix.board }}.app.bin"
           ls -l dist
           {
-            echo "### Build: ${{ env.BOARD }}"
+            echo "### Build: ${{ matrix.board }}"
             echo '```'
-            pio run -e ${{ env.BOARD }} 2>&1 | grep -E "^(RAM|Flash):" || true
+            pio run -e ${{ matrix.board }} 2>&1 | grep -E "^(RAM|Flash):" || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # Prove the image belongs to the board its filename claims. It once did not:
+      # mcu_cfg.h defined the board macros unconditionally, overwriting the -D from
+      # this environment, so every env built AI Thinker firmware and only the file
+      # names differed. Nothing in a green build revealed it. Each board's
+      # OTA_ASSET_NAME is compiled into its own image, which makes it a usable
+      # fingerprint: the right one present, every other one absent.
+      - name: Verify image identity
+        run: |
+          img=dist/firmware-${{ matrix.board }}.app.bin
+          mine="firmware-${{ matrix.board }}.app.bin"
+          if ! grep -qa "$mine" "$img"; then
+            echo "::error::$img does not contain its own asset name ($mine) — it was built for another board."
+            exit 1
+          fi
+          rc=0
+          for other in $(sed -n 's/.*#define[[:space:]]\{1,\}OTA_ASSET_NAME[[:space:]]\{1,\}"\([^"]*\)".*/\1/p' src/module_*.h); do
+            [ "$other" = "$mine" ] && continue
+            if grep -qa "$other" "$img"; then
+              echo "::error::$img also contains $other — board selection is leaking between headers."
+              rc=1
+            fi
+          done
+          exit $rc
+
       - uses: actions/upload-artifact@v4
         with:
-          name: firmware-${{ env.BOARD }}
+          name: firmware-${{ matrix.board }}
           path: dist/
           retention-days: 14
 
-      # Pages hosts the web flasher AND the binary it installs. Serving both from
+  # Publishing waits for every board: the flasher page and the release both carry
+  # all of them, and two matrix legs racing to create the same release would be a
+  # coin flip over which assets survive.
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: firmware-*
+          merge-multiple: true
+          path: dist
+
+      - run: ls -l dist
+
+      # Pages hosts the web flasher AND the binaries it installs. Serving both from
       # the same origin sidesteps the CORS/redirect problems that come with
       # pointing a manifest at a GitHub release asset URL.
       - name: Assemble Pages site
-        if: startsWith(github.ref, 'refs/tags/v')
         run: |
           mkdir -p site
           cp -r docs/* site/
-          cp "dist/firmware-${{ env.BOARD }}.factory.bin" site/
-          sed -i "s/__VERSION__/${GITHUB_REF_NAME}/g" site/manifest-${{ env.BOARD }}.json site/index.html
+          cp dist/*.factory.bin site/
+          sed -i "s/__VERSION__/${GITHUB_REF_NAME}/g" site/manifest-*.json site/index.html
 
       - name: Upload Pages artifact
-        if: startsWith(github.ref, 'refs/tags/v')
         uses: actions/upload-pages-artifact@v3
         with:
           path: site
 
       - name: Create release
-        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*
@@ -157,15 +230,28 @@ jobs:
             **Easiest — browser flasher (Chrome or Edge):**
             https://gw-tan.github.io/Prusa-ESP32-Cam-Enhanced/
 
+            Pick your board on that page; it flashes the right image for you.
+
             **Command line:**
             ```
-            esptool.py --chip esp32 write_flash 0x0 firmware-ai_thinker.factory.bin
+            esptool.py --chip esp32 write_flash 0x0 firmware-<board>.factory.bin
             ```
 
             `firmware-*.factory.bin` is a complete image — bootloader, partition
             table and application. Flash it at offset `0x0`. Do not use
             `*.app.bin` unless you know why you want it; it omits the partition
             table, and this firmware does not use the default one.
+
+            ### Which file
+
+            | Board | File |
+            |---|---|
+            | AI Thinker ESP32-CAM | `firmware-ai_thinker.factory.bin` |
+            | Freenove ESP32-WROVER-DEV | `firmware-wrover.factory.bin` |
+
+            Flashing the wrong board's image gives you a device with the wrong
+            camera pins. The firmware's own OTA updater picks the matching asset
+            automatically, so this only applies to flashing over USB.
 
             ### This clears your settings
 
@@ -178,21 +264,30 @@ jobs:
             **To upgrade and keep your settings**, flash the app partition only:
 
             ```
-            esptool.py --chip esp32 write_flash 0x10000 firmware-ai_thinker.app.bin
+            esptool.py --chip esp32 write_flash 0x10000 firmware-<board>.app.bin
             ```
 
             That leaves every other partition untouched. Use it only when
             upgrading an existing install — it does not write the partition
-            table, so it cannot set up a blank device.
+            table, so it cannot set up a blank device. In-place upgrades are
+            easier from the device's own web UI (System → Firmware).
 
-            Built and tested on AI Thinker ESP32-CAM. Other boards are not yet
-            verified against this build.
+            ### Board support
+
+            **AI Thinker ESP32-CAM** — developed and tested on this board.
+
+            **Freenove ESP32-WROVER-DEV** — builds from the same source and is
+            published on request, but has not been tested on hardware by the
+            maintainer. Its board definition has no SD card, so **timelapse and
+            SD logging are unavailable** on it; everything else (Prusa Connect
+            upload, streaming, PrusaLink status, OTA) is board-independent.
+            Reports welcome in the issue tracker.
 
   # Publishing is a separate job because deploy-pages needs its own permissions
   # and environment, which would otherwise widen the build job's token scope.
   deploy-pages:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    needs: publish
     runs-on: ubuntu-latest
     permissions:
       pages: write

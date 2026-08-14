@@ -995,6 +995,11 @@ String Server_GetJsonData() {
   doc_json["image_rotation"] = SystemCamera.GetCameraImageRotation();
   doc_json["timelaps"] = Server_TranslateBoolToString(Connect.GetTimeLapsPhotoSaveStatus());
   doc_json["upload_enable"] = Server_TranslateBoolToString(Connect.GetUploadEnabled());
+  /* Whether this board has an SD card at all, as opposed to having one that is
+     currently empty. Without it the SPA cannot tell the two apart, and a board
+     built with ENABLE_SD_CARD false (the WROVER) would show a timelapse UI whose
+     every button returns 503. Fixed at build time, so the SPA reads it once. */
+  doc_json["sd_hw"] = (bool)ENABLE_SD_CARD;
   doc_json["sd_status"] = (SystemLog.GetCardDetectedStatus() == true) ? F("Card detected") : F("No card detected");
   doc_json["sd_total"] = SystemLog.GetCardSizeMB();
   doc_json["sd_free_p"] = SystemLog.GetFreeSpacePercent();

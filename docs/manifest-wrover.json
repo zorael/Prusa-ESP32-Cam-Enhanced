@@ -1,0 +1,13 @@
+{
+  "name": "Prusa ESP32-Cam Enhanced (Freenove ESP32-WROVER-DEV)",
+  "version": "__VERSION__",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32",
+      "parts": [
+        { "path": "firmware-wrover.factory.bin", "offset": 0 }
+      ]
+    }
+  ]
+}

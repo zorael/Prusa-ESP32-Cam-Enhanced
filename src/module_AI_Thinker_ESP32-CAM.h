@@ -51,7 +51,12 @@
 #define ENABLE_PSRAM                true   ///< Enable PSRAM
 
 /* --------------- OTA UPDATE CFG  --------------*/
-#define OTA_UPDATE_FW_FILE          PSTR("ESP32_PrusaConnectCam.ino.bin") ///< OTA update firmware file name
+/* Release asset this board pulls over OTA. The name must match the artifact the
+   release workflow publishes for this board's PlatformIO environment, because
+   OtaUpdate::DoCheck matches assets by exact filename — that match is the only
+   thing stopping a board from installing another board's image. App-only: the
+   factory image would be wrong here, and Update writes the app partition anyway. */
+#define OTA_ASSET_NAME              "firmware-ai_thinker.app.bin" ///< release asset for env:ai_thinker
 #define FW_STATUS_LED_PIN           4      ///< GPIO pin for status FW update LED
 #define FW_STATUS_LED_LEVEL_ON      HIGH   ///< GPIO pin level for status LED ON
 

@@ -13,13 +13,36 @@
 #define _MCU_CFG_H_
 
 /* ----------------- CAMERA TYPE  ---------------*/
-#define AI_THINKER_ESP32_CAM            true
+/* The board comes from the PlatformIO environment's build_flags (-DBOARD=true),
+   and module_templates.h selects the header by VALUE, not by #ifdef. So these
+   must be #ifndef-guarded defaults: defining them unconditionally, as this file
+   used to, silently overwrote the -D from platformio.ini and every environment
+   built AI Thinker firmware regardless of the one it named — including a
+   "firmware-wrover.bin" that was AI Thinker inside.
+
+   No default board. A build with no flag is a mistake and must fail, which the
+   guard in module_templates.h does. Never reintroduce a fallback here. */
+#ifndef AI_THINKER_ESP32_CAM
+#define AI_THINKER_ESP32_CAM            false
+#endif
+#ifndef ESP32_WROVER_DEV
 #define ESP32_WROVER_DEV                false
+#endif
+#ifndef CAMERA_MODEL_ESP32_S3_DEV_CAM
 #define CAMERA_MODEL_ESP32_S3_DEV_CAM   false
+#endif
+#ifndef CAMERA_MODEL_ESP32_S3_EYE_2_2
 #define CAMERA_MODEL_ESP32_S3_EYE_2_2   false
+#endif
+#ifndef CAMERA_MODEL_XIAO_ESP32_S3_CAM
 #define CAMERA_MODEL_XIAO_ESP32_S3_CAM  false
+#endif
+#ifndef CAMERA_MODEL_ESP32_S3_CAM
 #define CAMERA_MODEL_ESP32_S3_CAM       false
+#endif
+#ifndef ESP32_S3_WROOM_FREENOVE
 #define ESP32_S3_WROOM_FREENOVE         false
+#endif
 
 /* ---------------- BASIC MCU CFG  --------------*/
 /* Versioned independently of upstream from here on. This fork has diverged far
@@ -27,7 +50,7 @@
    downloads — that reusing prusa3d's numbering would imply a correspondence that no
    longer exists. Restarted at 1.0.0 as its own project.
    The release workflow fails the build if a git tag disagrees with this string. */
-#define SW_VERSION                  "1.0.0"                 ///< SW version
+#define SW_VERSION                  "1.1.0"                 ///< SW version
 #define SW_BUILD                    __DATE__ " " __TIME__   ///< build number
 #define CONSOLE_VERBOSE_DEBUG       false                   ///< enable/disable verbose debug log level for console
 #define DEVICE_HOSTNAME             "Prusa-ESP32cam"        ///< device hostname
@@ -179,7 +202,13 @@
    On-demand only — there is no background polling. See ota.h for why. */
 #define OTA_API_HOST                "api.github.com"
 #define OTA_API_PATH                "/repos/gw-tan/Prusa-ESP32-Cam-Enhanced/releases/latest"
-#define OTA_ASSET_NAME              "firmware-ai_thinker.app.bin"   ///< app-only image; installing the factory image over OTA would be wrong (and Update writes the app partition anyway)
+/* OTA_ASSET_NAME is per board — see the OTA UPDATE CFG block in each
+   src/module_<board>.h. It must not live here: one global name would hand every
+   board the same image, and an app image built for another board is at best a
+   camera with the wrong pins, at worst (ESP32-S3 app on an ESP32) a device that
+   will not boot. A board whose asset is absent from the release is told exactly
+   that by OtaUpdate::DoCheck, which is the correct outcome for a board this
+   project does not publish binaries for. */
 #define OTA_HTTP_TIMEOUT_MS         15000                           ///< per-request timeout [ms]
 #define OTA_CHUNK_BYTES             1024                            ///< download buffer; stack-allocated, keep modest
 #define OTA_STALL_TIMEOUT_MS        20000                           ///< abort if no bytes arrive for this long [ms]

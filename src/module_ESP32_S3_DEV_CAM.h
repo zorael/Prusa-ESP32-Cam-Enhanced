@@ -61,7 +61,7 @@
 #define ENABLE_PSRAM                true    ///< Enable PSRAM   
 
 /* --------------- OTA UPDATE CFG  --------------*/
-#define OTA_UPDATE_FW_FILE          PSTR("ESP32S3_DEV_CAM.bin") ///< OTA update firmware file name
+#define OTA_ASSET_NAME              "firmware-esp32s3_dev_cam.app.bin" ///< no PlatformIO environment builds this board — OTA will always report the asset missing
 #define FW_STATUS_LED_PIN           34      ///< GPIO pin for status FW update LED
 #define FW_STATUS_LED_LEVEL_ON      LOW     ///< GPIO pin level for status LED ON
 

@@ -71,9 +71,13 @@ counters and stack high-water marks in telemetry.
 ### Browser
 
 Open the [web flasher](https://gw-tan.github.io/Prusa-ESP32-Cam-Enhanced/)
-in Chrome or Edge and click install. Firefox and Safari don't implement WebSerial.
+in Chrome or Edge, pick your board and click install. Firefox and Safari don't
+implement WebSerial.
 
 ### Command line
+
+Releases carry one pair of images per board — `ai_thinker` and `wrover`. Flashing
+the wrong one gives you a device with the wrong camera pins.
 
 ```bash
 # New device or clean reinstall — CLEARS your settings
@@ -91,8 +95,10 @@ esptool.py --chip esp32 write_flash 0x10000 firmware-ai_thinker.app.bin
 
 ### Flash mode
 
-The ESP32-CAM has no USB port. With a USB–serial adapter: connect `GPIO0` to `GND`,
-power on or reset, and remove the jumper afterwards.
+The AI Thinker ESP32-CAM has no USB port. With a USB–serial adapter: connect `GPIO0`
+to `GND`, power on or reset, and remove the jumper afterwards. The Freenove
+WROVER board has its own USB port; if it doesn't enter the bootloader by itself,
+hold `BOOT` while tapping `RESET`.
 
 ---
 
@@ -103,6 +109,9 @@ pio run -e ai_thinker              # build
 pio run -e ai_thinker -t upload    # build and flash
 pio device monitor -b 115200       # serial console
 ```
+
+The environment selects the board — there is no default and no header to edit.
+Building without one fails rather than guessing.
 
 `tools/devflash.py` wraps the erase/flash/restore cycle and backs your config up
 first, so testing a from-scratch install doesn't cost you the setup wizard:
@@ -138,10 +147,31 @@ untested boards, a report either way is the most useful thing you can send.
 
 ## Board support
 
-Only the **AI Thinker ESP32-CAM** is built and tested. `platformio.ini` still carries
-the ESP32-S3 environments inherited from upstream and they compile, but none has been
-verified against this firmware's camera and PSRAM changes. Treat them as unsupported
-until someone flashes one.
+| Board | Environment | Released | Tested on hardware |
+|---|---|---|---|
+| AI Thinker ESP32-CAM | `ai_thinker` | yes | yes |
+| Freenove ESP32-WROVER-DEV | `wrover` | yes | **no** |
+| ESP32-S3 variants (4 envs) | see `platformio.ini` | no | no |
+
+The **AI Thinker ESP32-CAM** is what this firmware is developed against.
+
+The **WROVER** build is published because it was asked for. It compiles from the
+same source and reuses upstream's board definition, but nobody has run it on real
+hardware — and that definition declares no SD card, so **timelapse and SD logging
+are unavailable** on it. The UI hides both rather than offering buttons that
+return 503. Everything else (Prusa Connect upload, streaming, PrusaLink status,
+OTA) is board-independent.
+
+The **ESP32-S3** environments are inherited from upstream and compile, but none has
+been verified against this firmware's camera and PSRAM changes and no binaries are
+published for them. Their OTA asset names are declared, so if a build is ever added
+those devices start updating on their own; until then OTA tells them the asset is
+missing rather than installing another board's image.
+
+Adding a board to the release means adding it to the `build` matrix in
+`.github/workflows/release.yml`, adding `docs/manifest-<env>.json`, and adding an
+option to the picker in `docs/index.html`. The `OTA_ASSET_NAME` in that board's
+`src/module_<board>.h` must equal `firmware-<env>.app.bin`; CI checks that.
 
 ---
 

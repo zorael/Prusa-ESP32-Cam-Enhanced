@@ -18,6 +18,13 @@
 #include "Certificate_ota.h"
 #include "timelapse.h"
 
+/* Every board defines its own asset name in src/module_<board>.h. Falling back to
+   a default here would be the bug this guard exists to prevent: whichever board
+   owned the default would be handed to every board that forgot to declare one. */
+#ifndef OTA_ASSET_NAME
+#error "This board's module_<board>.h does not define OTA_ASSET_NAME (see the OTA UPDATE CFG block in any existing board header)."
+#endif
+
 OtaUpdate SystemOta(&SystemLog);
 
 /**

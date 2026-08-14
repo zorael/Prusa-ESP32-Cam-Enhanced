@@ -30,7 +30,7 @@
       <svg id="rssi-icon" class="w-4 h-4 text-sub" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><circle cx="12" cy="20" r="1" fill="currentColor"/></svg>
       <span id="rssi-val" class="text-sub hidden sm:inline">--</span>
     </div>
-    <div class="flex items-center gap-1" title="SD card">
+    <div id="sd-pill" class="flex items-center gap-1" title="SD card">
       <svg class="w-4 h-4 text-sub" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 5v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5l3-3h9l2 2z"/><polyline points="14 3 14 8 19 8"/></svg>
       <span id="sd-val" class="text-sub">--</span>
     </div>
@@ -103,7 +103,7 @@
     </div>
 
     <!-- Timelapse -->
-    <div class="p-4 border-b border-border">
+    <div id="tl-section" class="p-4 border-b border-border">
       <p class="text-xs text-muted uppercase tracking-widest mb-3">Timelapse</p>
       <div class="flex items-center justify-between mb-3">
         <div><p class="text-sm text-text">Record</p><p id="tl-status-text" class="text-xs text-muted">Idle</p></div>
@@ -342,7 +342,7 @@
     </div>
 
     <!-- SD bar -->
-    <div class="bg-panel border-b border-border px-3 py-1.5 flex items-center gap-2 text-xs shrink-0">
+    <div id="sd-row" class="bg-panel border-b border-border px-3 py-1.5 flex items-center gap-2 text-xs shrink-0">
       <svg class="w-3.5 h-3.5 text-muted shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 5v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5l3-3h9l2 2z"/><polyline points="14 3 14 8 19 8"/></svg>
       <div class="flex-1 bg-surface rounded-full h-1.5 overflow-hidden"><div id="sd-bar" class="h-full bg-orange rounded-full transition-all" style="width:0%"></div></div>
       <span id="sd-detail" class="text-sub shrink-0 truncate max-w-40">SD: --</span>
@@ -353,7 +353,7 @@
       <button role="tab" aria-selected="true" aria-controls="tab-system" class="tab-btn active px-4 py-3 border-b-2 border-transparent text-sub hover:text-text shrink-0 transition-colors" data-tab="system" onclick="switchTab(this)">System</button>
       <button role="tab" aria-selected="false" aria-controls="tab-connect" class="tab-btn px-4 py-3 border-b-2 border-transparent text-sub hover:text-text shrink-0 transition-colors" data-tab="connect" onclick="switchTab(this)">Connect</button>
       <button role="tab" aria-selected="false" aria-controls="tab-wifi" class="tab-btn px-4 py-3 border-b-2 border-transparent text-sub hover:text-text shrink-0 transition-colors" data-tab="wifi" onclick="switchTab(this)">WiFi</button>
-      <button role="tab" aria-selected="false" aria-controls="tab-tl-files" class="tab-btn px-4 py-3 border-b-2 border-transparent text-sub hover:text-text shrink-0 transition-colors" data-tab="tl-files" onclick="switchTab(this)">TL Files</button>
+      <button role="tab" id="tab-btn-tl-files" aria-selected="false" aria-controls="tab-tl-files" class="tab-btn px-4 py-3 border-b-2 border-transparent text-sub hover:text-text shrink-0 transition-colors" data-tab="tl-files" onclick="switchTab(this)">TL Files</button>
       <button role="tab" aria-selected="false" aria-controls="tab-logs" class="tab-btn px-4 py-3 border-b-2 border-transparent text-sub hover:text-text shrink-0 transition-colors" data-tab="logs" onclick="switchTab(this)">Logs</button>
     </div>
 
@@ -479,6 +479,7 @@ const S = {
   statusController: null,
   statusTimer: null,
   _loaded: false,
+  sdHw: null,   // null until the first json_input; false only on boards with no SD hardware
 };
 
 // ── Boot ───────────────────────────────────────────────────────────────
@@ -549,8 +550,31 @@ function fetchStatus() {
   const sig = S.statusController.signal;
   fetch('json_input', { signal: sig })
     .then(r => r.json()).then(applyStatus).catch(() => {});
-  fetch('/timelapse/status', { signal: sig })
-    .then(r => r.json()).then(applyTlStatus).catch(() => {});
+  // Boards built without an SD card have no recording to report — S.sdHw stays
+  // null until the first json_input lands, so the very first poll still asks.
+  if (S.sdHw !== false) {
+    fetch('/timelapse/status', { signal: sig })
+      .then(r => r.json()).then(applyTlStatus).catch(() => {});
+  }
+}
+
+// Whether this board has SD hardware at all. Fixed at build time, so this runs
+// once from the _loaded block: no SD means no timelapse, no file list, and no
+// point drawing a capacity bar for a card that can never be inserted.
+function applySdSupport(sdHw) {
+  // Absent means an older build that predates the field, and every board that
+  // shipped before it had an SD card — so absence must read as "yes", never "no".
+  const hasSd = (sdHw === undefined) || sdHw == true || sdHw === 'true';
+  S.sdHw = hasSd;
+  if (hasSd) return;
+
+  // Guard the window in which the user could have opened TL Files before the
+  // first status arrived, which would otherwise leave an empty content area.
+  if (document.getElementById('tab-btn-tl-files').classList.contains('active')) {
+    switchTab(document.querySelector('.tab-btn[data-tab="system"]'));
+  }
+  ['tl-section', 'sd-row', 'sd-pill', 'tab-btn-tl-files', 'tab-tl-files']
+    .forEach(id => document.getElementById(id).classList.add('hidden'));
 }
 
 function applyStatus(d) {
@@ -588,6 +612,7 @@ function applyStatus(d) {
 
   if (!S._loaded) {
     S._loaded = true;
+    applySdSupport(d.sd_hw);
     setSlider('brightness', d.brightness);
     setSlider('contrast', d.contrast);
     setSlider('saturation', d.saturation);
