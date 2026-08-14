@@ -150,17 +150,24 @@ untested boards, a report either way is the most useful thing you can send.
 | Board | Environment | Released | Tested on hardware |
 |---|---|---|---|
 | AI Thinker ESP32-CAM | `ai_thinker` | yes | yes |
-| Freenove ESP32-WROVER-DEV | `wrover` | yes | **no** |
+| Freenove ESP32-WROVER-DEV (v3.0) | `wrover` | yes | **no** |
 | ESP32-S3 variants (4 envs) | see `platformio.ini` | no | no |
 
 The **AI Thinker ESP32-CAM** is what this firmware is developed against.
 
-The **WROVER** build is published because it was asked for. It compiles from the
-same source and reuses upstream's board definition, but nobody has run it on real
-hardware — and that definition declares no SD card, so **timelapse and SD logging
-are unavailable** on it. The UI hides both rather than offering buttons that
-return 503. Everything else (Prusa Connect upload, streaming, PrusaLink status,
-OTA) is board-independent.
+The **WROVER** build is published because it was asked for, and has **not been run
+on real hardware** by the maintainer. Reports welcome.
+
+Two board-specific notes, both forced by the hardware:
+
+- **SD card works on v3.0 boards**, which carry a microSD slot on the back wired
+  to a fixed 1-bit SDMMC bus (CLK 14, CMD 15, D0 2). Earlier revisions had no
+  slot; those report "No card detected" and everything else runs normally.
+- **The status LED is disabled on this board.** Its only onboard LED is GPIO 2,
+  which is also SD D0 — Freenove's own Blink and SDMMC examples use that one pin
+  for both. Blinking it would corrupt card transfers, so the card wins and WiFi
+  state is read from the web UI instead. For the same reason the factory-reset
+  indicator and the optional external flash LED moved to GPIO 13.
 
 The **ESP32-S3** environments are inherited from upstream and compile, but none has
 been verified against this firmware's camera and PSRAM changes and no binaries are

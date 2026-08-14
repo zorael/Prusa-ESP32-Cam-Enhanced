@@ -14,7 +14,9 @@ pio run -e ai_thinker -t upload          # compile + flash
 pio run -e ai_thinker -t erase && \
   pio run -e ai_thinker -t upload        # erase + flash (first flash on new board)
 pio device monitor -b 115200             # serial monitor
-pio run                                  # compile all board environments
+pio run                                  # compiles ONLY ai_thinker (default_envs)
+pio run -e ai_thinker -e wrover -e esp32s3_eye \
+        -e freenove_s3_wroom -e xiao_esp32s3 -e esp32s3_cam   # every board
 ```
 
 > **Windows note:** `pio` is not on PATH by default. Use the full path:
@@ -65,6 +67,15 @@ Boards differ in what they physically have, and the SPA has to know: `json_input
 carries `sd_hw` (from `ENABLE_SD_CARD`) so a board without an SD card hides the
 timelapse UI instead of offering buttons that answer 503. That is distinct from
 `sd_status`, which reports whether a card is *inserted*.
+
+**`STATUS_LED_ENABLE` is honoured in `sys_led.cpp`, not at the call sites.** It was
+dead for a long time — every board initialised and toggled its status LED whatever
+the flag said. That only became a real bug on the Freenove WROVER v3, where the
+onboard LED is GPIO 2 and GPIO 2 is also SD D0, so a 400 ms blink lands in the
+middle of a card transfer. `sys_led`'s methods compile to nothing when the flag is
+false; keep it that way rather than guarding the five callers. Before assuming any
+board's pin map, check the vendor's own example sketches — upstream's headers
+describe one board revision and Freenove changed the hardware under them.
 
 ### EEPROM address map — read before touching it
 

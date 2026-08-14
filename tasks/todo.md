@@ -96,13 +96,59 @@ section, the TL Files tab, the SD bar and the SD pill. It also stops polling
     image (0xE9 at both 0x1000 and 0x10000), chip id 0 = ESP32 matching the
     manifest, and the board's own name and OTA asset string inside the image.
 
+## Follow-up: SD card on the WROVER (re-cut into v1.1.0)
+
+The first v1.1.0 build said the WROVER has no SD card. That was wrong, and it came
+from trusting upstream's board header as a description of the hardware. Freenove
+**v3.0** boards have a microSD slot on the back; earlier revisions did not, which
+is the revision upstream documented. See [lessons.md](lessons.md).
+
+Shipped by **replacing** the v1.1.0 tag and release rather than as a new version,
+at the maintainer's direction — the original had been public for about an hour.
+The cost, accepted knowingly: any device already running the first 1.1.0 build
+will not be offered this one over OTA, because the version string is unchanged and
+`OtaUpdate::IsNewer` compares versions numerically. Those devices need a manual
+flash. Anyone who downloaded the first `firmware-wrover.factory.bin` has a binary
+that no longer matches the tag it came from.
+
+Confirmed from the vendor's own sketches, not from prose about them:
+`Sketch_03.1_SDMMC_Test` declares `SD_MMC_CMD 15`, `SD_MMC_CLK 14`, `SD_MMC_D0 2`,
+each marked "Please do not modify it", on a 1-bit bus — 4-bit is impossible here
+because D1 would be GPIO 4, the camera's Y2. `Sketch_01.1_Blink` declares
+`LED_BUILTIN 2`. The two collide on GPIO 2 by the vendor's own definition.
+
+Changes:
+
+- [x] `ENABLE_SD_CARD true`, pins 14 / 15 / 2 on the WROVER
+- [x] Flash LED 14 → 13 (14 is SD CLK; this board has no onboard flash LED at
+      all, so GPIO 14 was only ever a "wire your own here" pin)
+- [x] `CFG_RESET_LED_PIN` 2 → 13 (factory-reset blinking runs *after* the card
+      mounts, so it would have driven D0 mid-transfer)
+- [x] `STATUS_LED_ENABLE` made real, and set false for the WROVER
+
+**`STATUS_LED_ENABLE` was dead code.** Defined in all seven headers, documented
+as "enable/disable status LED", read nowhere. `system_led` was constructed,
+initialised and toggled unconditionally, so `module_ESP32-S3_Wroom_Freenove.h`
+setting it `false` had been silently ignored for its whole life. Honouring it is
+what makes the WROVER's SD card possible, and it fixes the S3 Wroom board as a
+side effect. Guarded inside `sys_led.cpp` rather than at the five call sites, so
+the pin has exactly one owner.
+
+The tradeoff is forced by the hardware and cannot be worked around: SPI mode
+would use the same three pins plus 13. The card wins over the blink, since
+timelapse is the point of this fork and WiFi state is in the web UI.
+
+Verified: `sys_led::toggle()` and `init()` disassemble to `entry; retw.n` — empty
+— in the wrover object file, while ai_thinker still emits both `callx8` calls. SD
+strings (`/sdcard`, `Start init micro-SD Card`) are present in the wrover image,
+and its flash grew 72 KB as the SD and timelapse code came back in.
+
 ## Not done
 
-- **Nobody has run the WROVER image on real hardware.** It is published as
-  untested, and labelled that way in the release notes, the flasher page and the
-  README.
-- **SD on the WROVER was not attempted.** The Freenove board does have a microSD
-  slot (SDMMC 1-bit would be CLK 14 / CMD 15 / D0 2), but the board header
-  assigns GPIO 14 to the flash LED and GPIO 2 to the status LED, so enabling it
-  means reassigning both — unverifiable without the board. Worth revisiting if
-  Solididi is willing to test.
+- **Nobody has run either image on WROVER hardware.** Still labelled untested in
+  the release notes, the flasher page and the README. The SD wiring, the moved
+  flash pin and the dark status LED are all unverified on a real board — this is
+  precisely what Solididi could confirm.
+- **Older WROVER revisions are untested too.** They should report "No card
+  detected" and otherwise run normally, the same path as an AI Thinker with an
+  empty slot, but nobody has held a v1 board to check.

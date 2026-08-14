@@ -80,12 +80,12 @@
     </ul>
     <p class="warn" data-board="wrover" hidden>
       <strong>Untested on hardware.</strong> This image builds from the same source
-      as the AI Thinker one and uses the board definition carried over from the
-      upstream Prusa firmware, but nobody has verified it on a real WROVER yet.
-      That board definition also declares no SD card, so <strong>timelapse and SD
-      logging are unavailable</strong> on it. Prusa Connect upload, streaming,
-      PrusaLink status and OTA don't depend on the board and should work.
+      as the AI Thinker one, but nobody has verified it on a real WROVER yet.
       <a href="https://github.com/gw-tan/Prusa-ESP32-Cam-Enhanced/issues">Tell me how it goes.</a>
+      Two things are specific to this board: the microSD slot on <strong>v3.0</strong>
+      boards is supported (earlier revisions have no slot and will report no card),
+      and the onboard <code>IO2</code> LED is left dark because that pin is also the
+      SD data line &mdash; check WiFi status on this page instead of watching it blink.
     </p>
   </div>
 

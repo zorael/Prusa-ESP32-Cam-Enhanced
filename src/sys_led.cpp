@@ -11,6 +11,13 @@
 
 #include "sys_led.h"
 
+/* STATUS_LED_ENABLE is a board header setting that, until now, nothing read: the
+   LED was initialised and toggled on every board regardless, so a board that set
+   it false (the Freenove S3 Wroom did) still drove its pin. That is harmless
+   until the pin is shared — on the Freenove WROVER v3 the onboard LED is GPIO 2,
+   which is also SD D0, and a blink mid-transfer corrupts the card. So the flag is
+   honoured here, in the one place that owns the pin, rather than at the five call
+   sites that would each have to remember. */
 sys_led system_led(STATUS_LED_GPIO_NUM, STATUS_LED_ON_DURATION);
 
 /**
@@ -44,8 +51,10 @@ sys_led::sys_led(uint8_t i_pin, uint32_t i_on_duration, Logs *i_log) {
  * 
  */
 void sys_led::init() {
+#if (true == STATUS_LED_ENABLE)
   pinMode(pin, OUTPUT);
   digitalWrite(pin, STATUS_LED_OFF_PIN_LEVEL);
+#endif
 }
 
 /**
@@ -53,7 +62,9 @@ void sys_led::init() {
  * 
  */
 void sys_led::toggle() {
+#if (true == STATUS_LED_ENABLE)
   digitalWrite(pin, !digitalRead(pin));
+#endif
 }
 
 /**
@@ -62,7 +73,9 @@ void sys_led::toggle() {
  * @param bool - state of LED
  */
 void sys_led::set(bool state) {
+#if (true == STATUS_LED_ENABLE)
   digitalWrite(pin, state);
+#endif
 }
 
 /**
@@ -71,7 +84,11 @@ void sys_led::set(bool state) {
  * @return bool - state of LED
  */
 bool sys_led::get() {
+#if (true == STATUS_LED_ENABLE)
   return digitalRead(pin);
+#else
+  return false;
+#endif
 }
 
 /**
@@ -91,11 +108,17 @@ void sys_led::setTimer(uint32_t i_time) {
 uint32_t sys_led::getTimer() {
   uint32_t tmp = 0;
 
+#if (true == STATUS_LED_ENABLE)
   if (digitalRead(pin) == STATUS_LED_OFF_PIN_LEVEL) {
     tmp = ledOnDuration;
   } else {
     tmp = time;
   }
+#else
+  /* No pin to read. Returning the blink period keeps the caller's scheduling
+     arithmetic well-defined; toggle() is a no-op, so nothing reaches a pin. */
+  tmp = time;
+#endif
 
   return tmp;
 }

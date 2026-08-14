@@ -278,10 +278,16 @@ jobs:
 
             **Freenove ESP32-WROVER-DEV** — builds from the same source and is
             published on request, but has not been tested on hardware by the
-            maintainer. Its board definition has no SD card, so **timelapse and
-            SD logging are unavailable** on it; everything else (Prusa Connect
-            upload, streaming, PrusaLink status, OTA) is board-independent.
-            Reports welcome in the issue tracker.
+            maintainer. Reports welcome in the issue tracker.
+
+            The microSD slot on **v3.0** boards is supported, on the fixed 1-bit
+            SDMMC bus Freenove wires it to (CLK 14, CMD 15, D0 2). Earlier
+            revisions have no slot and will simply report no card.
+
+            The onboard `IO2` LED stays dark on this board: GPIO 2 is also SD
+            D0, so blinking it would corrupt card transfers. Read WiFi state
+            from the web UI. The factory-reset indicator and the optional
+            external flash LED are on GPIO 13.
 
   # Publishing is a separate job because deploy-pages needs its own permissions
   # and environment, which would otherwise widen the build job's token scope.
